@@ -4,6 +4,11 @@ module Main where
 import qualified Data.List as List
 import Data.Maybe
 import Data.String
+import Data.Void
+import Control.Monad
+import Text.Megaparsec
+import Text.Megaparsec.Char
+import qualified Text.Megaparsec.Char.Lexer as L
 
 type Id = String
 type Env = [(Id, Val)]
@@ -51,21 +56,21 @@ whnf e                = e
 
 checkType (k, rho, gamma) e = checkExpr (k, rho, gamma) e VType
 
-checkExpr (k, rho, gamma) e v = 
+checkExpr (k, rho, gamma) e v =
     case e of
         Lam x n -> case whnf v of
-            VClosure env (Pi y a b) -> 
+            VClosure env (Pi y a b) ->
                 let v = VGen k
                 in checkExpr (k + 1, update rho x v, update gamma x (VClosure env a)) n (VClosure (update env y v) b)
             wrong -> error $ "Expected Pi but got " ++ show wrong
         Pi x a b -> case whnf v of
             VType -> checkType (k, rho, gamma) a && checkType (k + 1, update rho x (VGen k), update gamma x (VClosure rho a)) b
             _ -> error $ "Expected Type but got" ++ show (whnf v)
-        Let x e1 e2 e3 -> checkType (k, rho, gamma) e2 
+        Let x e1 e2 e3 -> checkType (k, rho, gamma) e2
           && checkExpr (k, update rho x (eval rho e1), update gamma x (eval rho e2)) e3 v
-        Var{} -> eqVal k (inferExpr (k, rho, gamma) e) v  
-        App{} -> eqVal k (inferExpr (k, rho, gamma) e) v  
-        Type  -> eqVal k (inferExpr (k, rho, gamma) e) v  
+        Var{} -> eqVal k (inferExpr (k, rho, gamma) e) v
+        App{} -> eqVal k (inferExpr (k, rho, gamma) e) v
+        Type  -> eqVal k (inferExpr (k, rho, gamma) e) v
 
 eqVal k u1 u2 = case (whnf u1, whnf u2) of
     (VType     , VType     ) -> True
@@ -85,41 +90,114 @@ eqVal k u1 u2 = case (whnf u1, whnf u2) of
     _ -> False
 
 
-inferExpr :: (Int, Env, Env) -> Expr -> Val 
+inferExpr :: (Int, Env, Env) -> Expr -> Val
 inferExpr (k, rho, gamma) e = case e of
     Var id -> lookupEnv id gamma
     App e1 e2 -> do
         let infer = whnf $ inferExpr (k, rho, gamma) e1
         case infer of
-            VClosure env (Pi x a b) -> if checkExpr (k, rho, gamma) e2 (VClosure env a) 
+            VClosure env (Pi x a b) -> if checkExpr (k, rho, gamma) e2 (VClosure env a)
                 then VClosure (update env x (VClosure rho e2)) b
                 else error $ "Can't infer type for App, expected Pi: " ++ show e ++ ", " ++ show infer
             _ -> error $ "Can't infer type for App, expected Pi: " ++ show e ++ ", " ++ show infer
     Type -> VType
-    _ -> error $ "Couldn't infer type for " ++ show e    
+    _ -> error $ "Couldn't infer type for " ++ show e
 
 typecheck m a =
-    checkType (0, [], []) a && checkExpr (0, [], []) m (VClosure [] a) 
+    checkType (0, [], []) a && checkExpr (0, [], []) m (VClosure [] a)
 
-(-->) = Lam
-(==>) = Pi "_"   
-infixr -->
+type Parser = Parsec Void String
+sc :: Parser () -- ‘sc’ stands for “space consumer”
+sc = L.space (void space1) lineComment blockComment
+  where lineComment = (string "--" <|> string "#") *> void (takeWhileP (Just "character") (/= '\n'))
+        blockComment = L.skipBlockComment "{-" "-}"
+
+lexeme = L.lexeme sc
+symbol = L.symbol sc
+parens = between (symbol "(") (symbol ")")
+brackets  = between (symbol "[") (symbol "]")
+braces  = between (symbol "{") (symbol "}")
+comma = symbol ","
+semi = symbol ";"
+commaSep p  = p `sepBy` comma
+trailCommaSep p  = p `sepEndBy` comma
+semiSep  p  = p `sepBy` semi
+
+
+identifier = lexeme $ try $ (:) <$> letterChar <*> many alphaNumChar
+
+
+telescope = identifier
+
+data PTele = PTele Id Expr
+
+ptele = parens $ do
+    e1 <- identifier
+    symbol ":"
+    e2 <- expr
+    return $ PTele e1 e2
+
+var :: Parser Expr
+var = (lexeme $ try $ Var <$> identifier) <?> "var expected"
+
+universe = symbol "U" >> return Type
+
+lambda :: Parser Expr
+lambda = do
+    symbol "\\" <|> symbol "λ"
+    teles <- some telescope
+    symbol "->"
+    e <- expr
+    return $ foldr Lam e teles
+    <?> "lambda expression"
+
+expr = lambda <|> try fun <|> try piType <|> exp1
+exp1 = apply <|> exp2
+exp2 = universe <|> var <|> parens expr
+
+fun = do
+    e1 <- exp1
+    symbol "->"
+    e2 <- expr
+    return $ Pi "_" e1 e2
+
+piType = do
+    PTele name e2 <- ptele
+    symbol "->"
+    e <- expr
+    return $ Pi name e2 e
+
+apply = try $ do
+    f <- exp2
+    args <- some exp2
+    return (foldl App f args) <?> "apply"
+
+toplevel = expr
+
+contents p = between sc eof p
+
+parseWith :: Parser Expr -> String -> Either (ParseError (Token String) Void) Expr
+parseWith parser s = parse (contents parser) "<stdin>" s
+
+pp :: String -> Expr
+pp s = case parseWith toplevel s of
+    Left err -> error $ parseErrorPretty err
+    Right exprs -> exprs
+
+
+(==>) = Pi "_"
 infixr ==>
 
 main :: IO ()
 main = do
-    putStrLn "hello world"
-    print $ Var "b"
-    let expr = "A" --> "x" --> "y" --> App "x" "y"
-        eTpe = Pi "A" Type $ ("A" ==> "A") ==> "A" ==> "A"
+    print $ pp "a"
+    print $ pp "a (b c) d"
+    print $ pp "a (λ b -> c c (d d))"
+    print $ pp "A -> (B x -> U) -> D"
+    print $ pp "(A : U) -> B"
+    print $ pp "(A : U) -> (x : A) -> (P : A -> U) -> P x"
+    print $ pp " λ A -> λ x -> λ y -> x y"
+    print $ pp " λ A x y -> x y"
+    let expr = pp "λ A x y -> x y"
+        eTpe = pp "(A : U) -> (A -> A) -> A -> A"
     print $ typecheck expr eTpe
-    print $ eval [] expr
--- \Int: Type -> \i: Int -> let a: (Int -> Type) i = i in a
-    let depExpr = "Int" --> "i" --> Let "a" "i" (App ("y" --> "Int") "i") "a"
-        -- depType = Pi "Int" Type $ "Int" ==> "Int"
-    -- print $ typecheck depExpr depType
-    print $ eval [] depExpr
-
--- 1ML + MLSub + MLTT/HoTT ==>> Lasca Type System + Module System 
-
--- (DepsTypes ==> Higher-kinded types, higher-order types, Type inference for subtyping)

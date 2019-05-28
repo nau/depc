@@ -1,8 +1,8 @@
-name:                dependentc
+name:                depc
 version:             0.1.0.0
 -- synopsis:
 -- description:
-homepage:            https://github.com/nau/dependentc
+homepage:            https://github.com/nau/depc
 license:             BSD3
 license-file:        LICENSE
 author:              Alexander Nemish
@@ -13,8 +13,9 @@ build-type:          Simple
 cabal-version:       >=1.10
 extra-source-files:  README.md
 
-executable hott
+executable depc
   hs-source-dirs:      src
   main-is:             Main.hs
   default-language:    Haskell2010
-  build-depends:       base >= 4.7 && < 5
+  build-depends:       base >= 4.7 && < 5,
+                       megaparsec
