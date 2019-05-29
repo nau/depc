@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 module Main where
 
 import qualified Data.List as List
@@ -38,7 +39,7 @@ main = do
     p "(A : U) -> B"
     p "(A : U) -> (x : A) -> (P : A -> U) -> P x"
     p "λ A -> λ x -> λ y -> a (λ b -> c c (d d))"
-    p " λ A x y -> x y"
+    p [s| λ A x y -> x y |]
     let proof = pp "λ A x y -> x y"
         theorem = pp "(A : U) -> (A -> A) -> A -> A"
     prove theorem proof

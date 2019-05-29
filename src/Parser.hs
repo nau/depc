@@ -1,3 +1,5 @@
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE QuasiQuotes #-}
 module Parser where
 import qualified Data.List as List
 import Data.Maybe
@@ -7,6 +9,10 @@ import Control.Monad
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
+
+import Language.Haskell.TH
+import Language.Haskell.TH.Quote
+
 import Core
 
 type Parser = Parsec Void String
@@ -97,3 +103,15 @@ pp :: String -> Expr
 pp s = case parseWith toplevel s of
     Left err -> error $ parseErrorPretty err
     Right exprs -> exprs
+
+s :: QuasiQuoter
+s = QuasiQuoter {
+    quoteExp  = return . LitE . StringL,
+
+    quotePat  = \_ -> fail "illegal QuasiQuote \
+                            \(allowed as expression only, used as a pattern)",
+    quoteType = \_ -> fail "illegal QuasiQuote \
+                            \(allowed as expression only, used as a type)",
+    quoteDec  = \_ -> fail "illegal raw string QuasiQuote \
+                            \(allowed as expression only, used as a declaration)"
+}
