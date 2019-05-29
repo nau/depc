@@ -14,8 +14,6 @@ import Data.Text.Prettyprint.Doc
 import Core
 import Parser
 
-pprint exp = show $ pretty (PExpr 0 exp)
-
 prove t p = if typecheck p t
     then do
         putStrLn $ "Theorem " ++ pprint t
@@ -43,3 +41,6 @@ main = do
     let proof = pp "λ A x y -> x y"
         theorem = pp "(A : U) -> (A -> A) -> A -> A"
     prove theorem proof
+    prove (pp "(A : U) -> A -> A") (pp "λ A a -> a")
+    prove (pp "(A : U) -> (B : U) -> (A -> B) -> A -> B") (pp "λ A B f a -> f a")
+    print $ pprint $ eval [("Int", VType)] (pp [s| (λ x -> x) Int |])

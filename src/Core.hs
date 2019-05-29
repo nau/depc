@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Core where
 
 import qualified Data.List as List
@@ -31,10 +32,6 @@ data Val
   | VClosure Env Expr
   deriving (Show, Eq)
 
-
-instance IsString Expr where
-   fromString = Var
-
 update env id v = (id, v) : env
 
 lookupEnv id env = fromMaybe (error $ "Couldn't find in env " ++ id) $ lookup id env
@@ -64,10 +61,10 @@ checkExpr (k, rho, gamma) e v =
             VClosure env (Pi y a b) ->
                 let v = VGen k
                 in checkExpr (k + 1, update rho x v, update gamma x (VClosure env a)) n (VClosure (update env y v) b)
-            wrong -> error $ "Expected Pi but got " ++ show wrong
+            wrong -> error $ "Expected Pi but got " ++ pprint wrong
         Pi x a b -> case whnf v of
             VType -> checkType (k, rho, gamma) a && checkType (k + 1, update rho x (VGen k), update gamma x (VClosure rho a)) b
-            _ -> error $ "Expected Type but got" ++ show (whnf v)
+            _ -> error $ "Expected Type but got" ++ pprint (whnf v)
         Let x e1 e2 e3 -> checkType (k, rho, gamma) e2
           && checkExpr (k, update rho x (eval rho e1), update gamma x (eval rho e2)) e3 v
         Var{} -> eqVal k (inferExpr (k, rho, gamma) e) v
@@ -100,8 +97,8 @@ inferExpr (k, rho, gamma) e = case e of
         case infer of
             VClosure env (Pi x a b) -> if checkExpr (k, rho, gamma) e2 (VClosure env a)
                 then VClosure (update env x (VClosure rho e2)) b
-                else error $ "Can't infer type for App, expected Pi: " ++ show e ++ ", " ++ show infer
-            _ -> error $ "Can't infer type for App, expected Pi: " ++ show e ++ ", " ++ show infer
+                else error $ "Can't infer type for App, expected Pi: " ++ pprint e ++ " inferred " ++ pprint infer
+            _ -> error $ "Can't infer type for App, expected Pi: " ++ pprint e ++ " inferred " ++ pprint infer
     Type -> VType
     _ -> error $ "Couldn't infer type for " ++ show e
 
@@ -118,16 +115,26 @@ instance Pretty Expr where
         Pi id tpe body -> parens (pretty id <+> ":" <+> pretty tpe) <+> "->" <+> pretty body
         Type -> "U"
 
-data PExpr = PExpr Int Expr
+data PEnv a = PEnv Int a
 
-instance Pretty PExpr where
-    pretty (PExpr prec e) = case e of
+instance Pretty (PEnv Expr) where
+    pretty (PEnv prec e) = case e of
         Var id -> pretty id
-        App e1 e2 -> wrap 10 prec $ pretty (PExpr 10 e1) <+> pretty (PExpr 11 e2)
-        Lam id expr -> wrap 5 prec $ "λ" <+> pretty id <+> "->" <+> pretty (PExpr 5 expr)
+        App e1 e2 -> wrap 10 prec $ pretty (PEnv 10 e1) <+> pretty (PEnv 11 e2)
+        Lam id expr -> wrap 5 prec $ "λ" <+> pretty id <+> "->" <+> pretty (PEnv 5 expr)
         Let id v t b -> parens $ "let" <+> pretty id <+> "=" <+> pretty v <+> pretty b
-        Pi "_" tpe body -> wrap 5 prec $ pretty (PExpr 6 tpe) <+> "->" <+> pretty (PExpr 5 body)
-        Pi id tpe body ->  wrap 5 prec $ parens (pretty id <+> ":" <+> pretty (PExpr 5 tpe)) <+> "->" <+> pretty (PExpr 5 body)
+        Pi "_" tpe body -> wrap 5 prec $ pretty (PEnv 6 tpe) <+> "->" <+> pretty (PEnv 5 body)
+        Pi id tpe body ->  wrap 5 prec $ parens (pretty id <+> ":" <+> pretty (PEnv 5 tpe)) <+> "->" <+> pretty (PEnv 5 body)
         Type -> "U"
 
+instance Pretty (PEnv Val) where
+    pretty (PEnv prec e) = case e of
+        VGen i -> pretty i
+        VApp e1 e2 -> wrap 10 prec $ pretty (PEnv 10 e1) <+> pretty (PEnv 11 e2)
+        VType -> "U"
+        VClosure env expr -> pretty (PEnv prec expr)
+
 wrap p p1 = if p < p1 then parens else id
+
+pprint :: Pretty (PEnv a) => a -> String
+pprint exp = show $ pretty (PEnv 0 exp)
