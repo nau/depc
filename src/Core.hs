@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Core where
 
 import qualified Data.List as List
@@ -9,6 +10,7 @@ import Control.Monad
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
+import Data.Text.Prettyprint.Doc
 
 type Id = String
 type Env = [(Id, Val)]
@@ -20,14 +22,14 @@ data Expr
   | Let Id Expr Expr Expr
   | Pi Id Expr Expr
   | Type
-  deriving (Show)
+  deriving (Show, Eq)
 
 data Val
   = VGen Int
   | VApp Val Val
   | VType
   | VClosure Env Expr
-  deriving (Show)
+  deriving (Show, Eq)
 
 
 instance IsString Expr where
@@ -106,3 +108,26 @@ inferExpr (k, rho, gamma) e = case e of
 typecheck m a =
     checkType (0, [], []) a && checkExpr (0, [], []) m (VClosure [] a)
 
+instance Pretty Expr where
+    pretty e = case e of
+        Var id -> pretty id
+        App e1 e2 -> parens $ pretty e1 <+> pretty e2
+        Lam id expr -> parens $ "λ" <+> pretty id <+> "->" <+> pretty expr
+        Let id v t b -> parens $ "let" <+> pretty id <+> "=" <+> pretty v <+> pretty b
+        Pi "_" tpe body -> parens $ pretty tpe <+> "->" <+> pretty body
+        Pi id tpe body -> parens (pretty id <+> ":" <+> pretty tpe) <+> "->" <+> pretty body
+        Type -> "U"
+
+data PExpr = PExpr Int Expr
+
+instance Pretty PExpr where
+    pretty (PExpr prec e) = case e of
+        Var id -> pretty id
+        App e1 e2 -> wrap 10 prec $ pretty (PExpr 10 e1) <+> pretty (PExpr 11 e2)
+        Lam id expr -> wrap 5 prec $ "λ" <+> pretty id <+> "->" <+> pretty (PExpr 5 expr)
+        Let id v t b -> parens $ "let" <+> pretty id <+> "=" <+> pretty v <+> pretty b
+        Pi "_" tpe body -> wrap 5 prec $ pretty (PExpr 6 tpe) <+> "->" <+> pretty (PExpr 5 body)
+        Pi id tpe body ->  wrap 5 prec $ parens (pretty id <+> ":" <+> pretty (PExpr 5 tpe)) <+> "->" <+> pretty (PExpr 5 body)
+        Type -> "U"
+
+wrap p p1 = if p < p1 then parens else id
