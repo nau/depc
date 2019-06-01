@@ -38,7 +38,6 @@ identifier = lexeme $ try $ (:) <$> letterChar <*> many alphaNumChar
 
 telescope = identifier
 
-data Decl = Def Id Expr Expr
 data PTele = PTele Id Expr
 
 ptele = parens $ do
@@ -92,17 +91,26 @@ decl = do
     return $ Def name tpe e
     <?> "declaration"
 
-toplevel = expr
+decls = some decl
+
+toplevel = Left <$> try decls <|> Right <$> expr
 
 contents p = between sc eof p
 
-parseWith :: Parser Expr -> String -> Either (ParseError (Token String) Void) Expr
 parseWith parser s = parse (contents parser) "<stdin>" s
 
 pp :: String -> Expr
 pp s = case parseWith toplevel s of
     Left err -> error $ parseErrorPretty err
-    Right exprs -> exprs
+    Right (Right expr) -> expr
+    Right (Left _) -> error "Decls but want expr"
+
+pd :: String -> [Decl]
+pd s = case parseWith toplevel s of
+    Left err -> error $ parseErrorPretty err
+    Right (Right expr) -> error "Want decls"
+    Right (Left decls) -> decls
+
 
 s :: QuasiQuoter
 s = QuasiQuoter {

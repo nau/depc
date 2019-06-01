@@ -32,6 +32,8 @@ data Val
   | VClosure Env Expr
   deriving (Show, Eq)
 
+data Decl = Def Id Expr Expr deriving (Show)
+
 update env id v = (id, v) : env
 
 lookupEnv id env = fromMaybe (error $ "Couldn't find in env " ++ id) $ lookup id env
@@ -48,28 +50,39 @@ eval env e = case e of
     Pi{}          -> VClosure env e
 
 
-
 whnf (VApp     e   v) = app (whnf e) (whnf v)
 whnf (VClosure env v) = eval env v
 whnf e                = e
 
 checkType (k, rho, gamma) e = checkExpr (k, rho, gamma) e VType
 
-checkExpr (k, rho, gamma) e v =
-    case e of
-        Lam x n -> case whnf v of
-            VClosure env (Pi y a b) ->
-                let v = VGen k
-                in checkExpr (k + 1, update rho x v, update gamma x (VClosure env a)) n (VClosure (update env y v) b)
-            wrong -> error $ "Expected Pi but got " ++ pprint wrong
-        Pi x a b -> case whnf v of
-            VType -> checkType (k, rho, gamma) a && checkType (k + 1, update rho x (VGen k), update gamma x (VClosure rho a)) b
-            _ -> error $ "Expected Type but got" ++ pprint (whnf v)
-        Let x e1 e2 e3 -> checkType (k, rho, gamma) e2
-          && checkExpr (k, update rho x (eval rho e1), update gamma x (eval rho e2)) e3 v
-        Var{} -> eqVal k (inferExpr (k, rho, gamma) e) v
-        App{} -> eqVal k (inferExpr (k, rho, gamma) e) v
-        Type  -> eqVal k (inferExpr (k, rho, gamma) e) v
+checkExpr (k, rho, gamma) e v = case e of
+    Lam x n -> case whnf v of
+        VClosure env (Pi y a b) -> let
+            v = VGen k
+            rho' = update rho x v
+            gamma' = update gamma x (VClosure env a)
+            in checkExpr (k + 1, rho', gamma') n (VClosure (update env y v) b)
+        wrong -> error $ "Expected Pi but got " ++ pprint wrong
+    Pi x a b -> case whnf v of
+        VType -> let
+            aIsType = checkType (k, rho, gamma) a
+            bIsType = let
+                rho' = update rho x (VGen k)
+                gamma' = update gamma x (VClosure rho a)
+                in checkType (k + 1, rho', gamma') b
+            in aIsType && bIsType
+        _ -> error $ "Expected Type but got" ++ pprint (whnf v)
+    Let x e eType body -> let
+        eTypeIsType  = checkType (k, rho, gamma) eType
+        bodyEvalsToV = let
+            rho' = update rho x (eval rho e)
+            gamma' = update gamma x (eval rho eType)
+            in checkExpr (k, rho', gamma') body v
+        in eTypeIsType && bodyEvalsToV
+    Var{} -> eqVal k (inferExpr (k, rho, gamma) e) v
+    App{} -> eqVal k (inferExpr (k, rho, gamma) e) v
+    Type  -> eqVal k (inferExpr (k, rho, gamma) e) v
 
 eqVal k u1 u2 = case (whnf u1, whnf u2) of
     (VType     , VType     ) -> True
@@ -95,7 +108,8 @@ inferExpr (k, rho, gamma) e = case e of
     App e1 e2 -> do
         let infer = whnf $ inferExpr (k, rho, gamma) e1
         case infer of
-            VClosure env (Pi x a b) -> if checkExpr (k, rho, gamma) e2 (VClosure env a)
+            VClosure env (Pi x a b) ->
+                if checkExpr (k, rho, gamma) e2 (VClosure env a)
                 then VClosure (update env x (VClosure rho e2)) b
                 else error $ "Can't infer type for App, expected Pi: " ++ pprint e ++ " inferred " ++ pprint infer
             _ -> error $ "Can't infer type for App, expected Pi: " ++ pprint e ++ " inferred " ++ pprint infer
@@ -115,13 +129,24 @@ instance Pretty Expr where
         Pi id tpe body -> parens (pretty id <+> ":" <+> pretty tpe) <+> "->" <+> pretty body
         Type -> "U"
 
+instance Pretty Decl where
+    pretty (Def id tpe body) = pretty id <+> ":" <+> pretty (PEnv 0 tpe) <+> "=" <+> pretty (PEnv 0 body)
+
 data PEnv a = PEnv Int a
+
+foldLam :: Expr -> ([Id], Expr)
+foldLam expr = go expr ([], expr) where
+    go (Lam name e) result = let (args, body) = go e result in (name : args, body)
+    go e (args, _) = (args, e)
 
 instance Pretty (PEnv Expr) where
     pretty (PEnv prec e) = case e of
         Var id -> pretty id
         App e1 e2 -> wrap 10 prec $ pretty (PEnv 10 e1) <+> pretty (PEnv 11 e2)
-        Lam id expr -> wrap 5 prec $ "λ" <+> pretty id <+> "->" <+> pretty (PEnv 5 expr)
+        Lam id expr -> let
+            (ids, expr) = foldLam e
+            foldedIds = foldl (\a i -> a <+> pretty i) "λ" ids
+            in wrap 5 prec $ foldedIds <+> "->" <+> pretty (PEnv 5 expr)
         Let id v t b -> parens $ "let" <+> pretty id <+> "=" <+> pretty v <+> pretty b
         Pi "_" tpe body -> wrap 5 prec $ pretty (PEnv 6 tpe) <+> "->" <+> pretty (PEnv 5 body)
         Pi id tpe body ->  wrap 5 prec $ parens (pretty id <+> ":" <+> pretty (PEnv 5 tpe)) <+> "->" <+> pretty (PEnv 5 body)

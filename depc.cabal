@@ -22,4 +22,5 @@ executable depc
   build-depends:       base >= 4.7 && < 5,
                        template-haskell,
                        megaparsec,
-                       prettyprinter
+                       prettyprinter,
+                       prettyprinter-ansi-terminal

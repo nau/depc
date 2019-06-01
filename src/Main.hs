@@ -22,8 +22,7 @@ prove t p = if typecheck p t
         putStrLn "QED."
     else putStrLn "Error"
 
-main :: IO ()
-main = do
+theorems = do
     let p s = do
             let exp = pp s
             putStrLn s
@@ -39,8 +38,16 @@ main = do
     p "λ A -> λ x -> λ y -> a (λ b -> c c (d d))"
     p [s| λ A x y -> x y |]
     let proof = pp "λ A x y -> x y"
-        theorem = pp "(A : U) -> (A -> A) -> A -> A"
+    let theorem = pp "(A : U) -> (A -> A) -> A -> A"
     prove theorem proof
     prove (pp "(A : U) -> A -> A") (pp "λ A a -> a")
     prove (pp "(A : U) -> (B : U) -> (A -> B) -> A -> B") (pp "λ A B f a -> f a")
     print $ pprint $ eval [("Int", VType)] (pp [s| (λ x -> x) Int |])
+
+main :: IO ()
+main = do
+    theorems
+    print $ pretty $ pd [s|
+        id : (A : U) -> A -> A = \ A a -> a;
+        modusPonens : (A : U) -> (B : U) -> (A -> B) -> A -> B = λ A B f a -> f a;
+    |]
