@@ -12,6 +12,7 @@ import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 import Data.Text.Prettyprint.Doc
+import Debug.Trace
 
 type Id = String
 type Env = [(Id, Val)]
@@ -36,7 +37,11 @@ data Decl = Def Id Expr Expr deriving (Show)
 
 update env id v = (id, v) : env
 
-lookupEnv id env = fromMaybe (error $ "Couldn't find in env " ++ id) $ lookup id env
+perr = error . show
+
+lookupEnv :: Id -> Env -> Val
+lookupEnv id env = fromMaybe err $ lookup id env
+  where err = perr $ "Couldn't find in env" <+> pretty id <+> line <+> pretty env
 
 app (VClosure env (Lam x e)) arg = eval (update env x arg) e
 app e arg = VApp e arg
@@ -56,6 +61,9 @@ whnf e                = e
 
 checkType (k, rho, gamma) e = checkExpr (k, rho, gamma) e VType
 
+tr :: Pretty a => a -> b -> b
+tr = traceShow . pretty
+
 checkExpr (k, rho, gamma) e v = case e of
     Lam x n -> case whnf v of
         VClosure env (Pi y a b) -> let
@@ -71,7 +79,8 @@ checkExpr (k, rho, gamma) e v = case e of
                 rho' = update rho x (VGen k)
                 gamma' = update gamma x (VClosure rho a)
                 in checkType (k + 1, rho', gamma') b
-            in aIsType && bIsType
+            txt = "rho:" <+> pretty rho <+> line <+> "gamma:" <+> pretty gamma
+            in traceShow txt $ aIsType && bIsType
         _ -> error $ "Expected Type but got" ++ pprint (whnf v)
     Let x e eType body -> let
         eTypeIsType  = checkType (k, rho, gamma) eType
@@ -119,15 +128,9 @@ inferExpr (k, rho, gamma) e = case e of
 typecheck m a =
     checkType (0, [], []) a && checkExpr (0, [], []) m (VClosure [] a)
 
-instance Pretty Expr where
-    pretty e = case e of
-        Var id -> pretty id
-        App e1 e2 -> parens $ pretty e1 <+> pretty e2
-        Lam id expr -> parens $ "λ" <+> pretty id <+> "->" <+> pretty expr
-        Let id v t b -> parens $ "let" <+> pretty id <+> "=" <+> pretty v <+> pretty b
-        Pi "_" tpe body -> parens $ pretty tpe <+> "->" <+> pretty body
-        Pi id tpe body -> parens (pretty id <+> ":" <+> pretty tpe) <+> "->" <+> pretty body
-        Type -> "U"
+typecheckEnv env m a =
+    checkType env a && checkExpr env m (VClosure [] a)
+
 
 instance Pretty Decl where
     pretty (Def id tpe body) = pretty id <+> ":" <+> pretty (PEnv 0 tpe) <+> "=" <+> pretty (PEnv 0 body)
@@ -157,9 +160,13 @@ instance Pretty (PEnv Val) where
         VGen i -> pretty i
         VApp e1 e2 -> wrap 10 prec $ pretty (PEnv 10 e1) <+> pretty (PEnv 11 e2)
         VType -> "U"
-        VClosure env expr -> pretty (PEnv prec expr)
+        VClosure env expr -> braces (pretty env <+> "->" <+> pretty (PEnv prec expr))
+
+instance Pretty Val where pretty val = pretty (PEnv 0 val)
+instance Pretty Expr where pretty val = pretty (PEnv 0 val)
+
 
 wrap p p1 = if p < p1 then parens else id
 
-pprint :: Pretty (PEnv a) => a -> String
-pprint exp = show $ pretty (PEnv 0 exp)
+pprint :: Pretty a => a -> String
+pprint exp = show $ pretty exp
