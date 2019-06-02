@@ -47,22 +47,18 @@ theorems = do
 
 main :: IO ()
 main = do
-    -- theorems
+    theorems
     -- let r = typecheckEnv (2, Rho [("Bool", VGen 1), ("Int", VGen 0)],
             -- Gamma [("Bool", VClosure (Rho []) Type), ("Int", VClosure (Rho []) Type)])
                 -- (pp "λ a b -> a ") (pp "Int -> Bool -> Int")
-    let r = runTyping (0, Rho [], Gamma []) $ do
-                env <- addDecl (Def "id" (pp "(A : U) -> A -> A") (pp "λ A i -> i"))
-                return  env
-    case r of
-        Right r -> do
-            let a = typecheckEnv r (pp "id U") (pp "U -> U")
-            case a of
-                Left e -> putStrLn $ pprint e
-                _ -> return ()
+    let defaultTEnv = addDecls emptyTEnv $ pd [s|
+                id : (A : U) -> A -> A = \ A a -> a;
+                modusPonens : (A : U) -> (B : U) -> (A -> B) -> A -> B = λ A B f a -> f a;
+            |]
+    let res = do
+            tenv <- defaultTEnv
+            addDecls tenv $ pd [s| Nat : U = U; |]
+    case res of
+        Right r -> putStrLn $ pprint r
         Left e -> putStrLn e
     -- putStrLn $ pprint $ eval (Rho [("id", VClosure (Rho []) (pp "λ i -> i") )]) $ pp "id id"
-    -- print $ pretty $ pd [s|
-        -- id : (A : U) -> A -> A = \ A a -> a;
-        -- modusPonens : (A : U) -> (B : U) -> (A -> B) -> A -> B = λ A B f a -> f a;
-    -- |]

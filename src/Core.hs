@@ -45,6 +45,10 @@ data Decl = Def Id Expr Expr deriving (Show)
 
 -- Type checking monad
 type TEnv = (Int, Rho, Gamma)
+
+emptyTEnv :: TEnv
+emptyTEnv = (0, Rho [], Gamma [])
+
 type Typing a = ReaderT TEnv (Except String) a
 
 -- runTyping :: TEnv -> Typing a -> Either String a
@@ -183,14 +187,17 @@ typecheckEnv tenv@(_, ρ, _) m a = runTyping tenv $ do
     checkExprHasType m (VClosure ρ a)
 
 
-addDecl decl = do
+addDecl1 (Def name tpe body) tenv@(k, r, g) =
+    (k, updateRho r name (eval r body),
+        updateGamma g name (eval r tpe))
+
+addDecl :: TEnv -> Decl -> Either String TEnv
+addDecl tenv decl = runTyping tenv $ do
     let Def name tpe body = decl
     checkType tpe
-    (k, r, g) <- ask
+    addDecl1 decl <$> ask
 
-    return (k,
-        updateRho r name (eval r body),
-        updateGamma g name (eval r tpe))
+addDecls tenv decls = foldM addDecl tenv decls
 
 instance Pretty Decl where
     pretty (Def id tpe body) = pretty id <+> ":" <+> pretty (PEnv 0 tpe) <+> "=" <+> pretty (PEnv 0 body)
