@@ -3,6 +3,11 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Core where
 
+import Control.Monad
+import Control.Monad.Identity
+import Control.Monad.Except
+import Control.Monad.Reader
+
 import qualified Data.List as List
 import Data.Maybe
 import Data.String
@@ -35,6 +40,14 @@ data Val
 
 data Decl = Def Id Expr Expr deriving (Show)
 
+-- Type checking monad
+type TEnv = (Int, Env, Env)
+type Typing a = ReaderT TEnv (Except String) a
+
+-- runTyping :: TEnv -> Typing a -> Either String a
+runTyping :: TEnv -> Typing a -> Either String a
+runTyping env t = runIdentity $ runExceptT $ runReaderT t env
+
 update env id v = (id, v) : env
 
 perr = error . show
@@ -43,9 +56,11 @@ lookupEnv :: Id -> Env -> Val
 lookupEnv id env = fromMaybe err $ lookup id env
   where err = perr $ "Couldn't find in env" <+> pretty id <+> line <+> pretty env
 
+app :: Val -> Val -> Val
 app (VClosure env (Lam x e)) arg = eval (update env x arg) e
 app e arg = VApp e arg
 
+eval :: Env -> Expr -> Val
 eval env e = case e of
     Var x         -> lookupEnv x env
     App e1 e2     -> app (eval env e1) (eval env e2)
@@ -55,44 +70,73 @@ eval env e = case e of
     Pi{}          -> VClosure env e
 
 
+whnf :: Val -> Val
 whnf (VApp     e   v) = app (whnf e) (whnf v)
 whnf (VClosure env v) = eval env v
 whnf e                = e
 
-checkType (k, rho, gamma) e = checkExpr (k, rho, gamma) e VType
+checkType e = do
+    checkExprHasType e VType
+    traceShowM $ "Type" <+> pretty e <+> "is a type!"
+    return ()
 
 tr :: Pretty a => a -> b -> b
 tr = traceShow . pretty
 
-checkExpr (k, rho, gamma) e v = case e of
-    Lam x n -> case whnf v of
-        VClosure env (Pi y a b) -> let
-            v = VGen k
-            rho' = update rho x v
-            gamma' = update gamma x (VClosure env a)
-            in checkExpr (k + 1, rho', gamma') n (VClosure (update env y v) b)
-        wrong -> error $ "Expected Pi but got " ++ pprint wrong
-    Pi x a b -> case whnf v of
-        VType -> let
-            aIsType = checkType (k, rho, gamma) a
-            bIsType = let
-                rho' = update rho x (VGen k)
-                gamma' = update gamma x (VClosure rho a)
-                in checkType (k + 1, rho', gamma') b
-            txt = "rho:" <+> pretty rho <+> line <+> "gamma:" <+> pretty gamma
-            in traceShow txt $ aIsType && bIsType
-        _ -> error $ "Expected Type but got" ++ pprint (whnf v)
-    Let x e eType body -> let
-        eTypeIsType  = checkType (k, rho, gamma) eType
-        bodyEvalsToV = let
-            rho' = update rho x (eval rho e)
-            gamma' = update gamma x (eval rho eType)
-            in checkExpr (k, rho', gamma') body v
-        in eTypeIsType && bodyEvalsToV
-    Var{} -> eqVal k (inferExpr (k, rho, gamma) e) v
-    App{} -> eqVal k (inferExpr (k, rho, gamma) e) v
-    Type  -> eqVal k (inferExpr (k, rho, gamma) e) v
+checkExprHasType expr typeVal = do
+    (k, rho, gamma) <- ask
+    let whTypeVal = whnf typeVal
+    case (expr, whTypeVal) of
+        (Lam x body, VClosure env (Pi y yType piBody)) -> do
+            let vgen = VGen k
+                rho' = update rho x vgen
+                gamma' = update gamma x (VClosure env yType)
+            let txt = "rho1:" <+> prettyEnv rho' <+> line <+> "gamma:" <+> prettyEnv gamma'
+            traceShowM txt
+            local (const (k + 1, rho', gamma')) $
+                checkExprHasType body (VClosure (update env y vgen) piBody)
+        (Lam{}, wrong) -> throwError $ "Expected Pi but got " ++ pprint wrong
+        (Pi x xType body, VType) -> do
+            checkType xType
+            let rho' = update rho x (VGen k)
+                gamma' = update gamma x (VClosure rho xType)
+            let txt = "rho2:" <+> prettyEnv rho' <+> line <+> "gamma:" <+> prettyEnv gamma'
+            traceShowM txt
+            local (const (k + 1, rho', gamma')) $ checkType body
+        (Pi x a b, _) -> throwError $ "Expected Type but got" ++ pprint whTypeVal ++ " for " ++ pprint expr
+        (Let x e eType body, _) -> do
+            checkType eType
+            let rho' = update rho x (eval rho e)
+                gamma' = update gamma x (eval rho eType)
+            local (const (k, rho', gamma')) $ checkExprHasType body typeVal
+        _ -> do
+            inferredTypeVal <- inferExprType expr
+            if eqVal k inferredTypeVal typeVal
+            then return ()
+            else throwError $ show $ "Types aren't equal:" <+>
+                pretty inferredTypeVal <+> line <+> pretty typeVal
+        -- App{} -> eqVal k (inferExpr e) v
+        -- Type  -> eqVal k (inferExpr e) v
 
+inferExprType :: Expr -> Typing Val
+inferExprType e = do
+    (k, rho, gamma) <- ask
+    case e of
+        Var id -> do
+            let typeVal = lookupEnv id gamma
+            traceM $ show ("Infer for" <+> pretty e <+> ":" <+> pretty typeVal)
+            return typeVal
+        App e1 e2 -> do
+            inferred <- inferExprType e1
+            case whnf inferred of
+                VClosure env (Pi x xType piBody) -> do
+                    checkExprHasType e2 (VClosure env xType)
+                    return $ VClosure (update env x (VClosure rho e2)) piBody
+                _ -> throwError $ "Can't infer type for App, expected Pi: " ++ pprint e ++ " inferred " ++ pprint inferred
+        Type -> return VType
+        _ -> throwError $ show $ "Couldn't infer type for" <+> pretty e
+
+eqVal :: Int -> Val -> Val -> Bool
 eqVal k u1 u2 = case (whnf u1, whnf u2) of
     (VType     , VType     ) -> True
     (VApp f1 a1, VApp f2 a2) -> eqVal k f1 f2 && eqVal k a1 a2
@@ -100,37 +144,24 @@ eqVal k u1 u2 = case (whnf u1, whnf u2) of
     (VClosure env1 (Lam x1 e1), VClosure env2 (Lam x2 e2)) ->
         let v = VGen k
         in  eqVal (k + 1)
-                  (VClosure (update env1 x1 v) e1)
-                  (VClosure (update env2 x2 v) e2)
-    (VClosure env1 (Pi x1 a1 b1), VClosure env2 (Pi x2 a2 b2)) ->
+                    (VClosure (update env1 x1 v) e1)
+                    (VClosure (update env2 x2 v) e2)
+    (VClosure env1 (Pi x1 xType1 b1), VClosure env2 (Pi x2 xType2 b2)) ->
         let v = VGen k
-        in  eqVal k (VClosure env1 a1) (VClosure env2 a2) && eqVal
+        in  eqVal k (VClosure env1 xType1) (VClosure env2 xType2) && eqVal
                 (k + 1)
                 (VClosure (update env1 x1 v) b1)
                 (VClosure (update env2 x2 v) b2)
     _ -> False
 
 
-inferExpr :: (Int, Env, Env) -> Expr -> Val
-inferExpr (k, rho, gamma) e = case e of
-    Var id -> lookupEnv id gamma
-    App e1 e2 -> do
-        let infer = whnf $ inferExpr (k, rho, gamma) e1
-        case infer of
-            VClosure env (Pi x a b) ->
-                if checkExpr (k, rho, gamma) e2 (VClosure env a)
-                then VClosure (update env x (VClosure rho e2)) b
-                else error $ "Can't infer type for App, expected Pi: " ++ pprint e ++ " inferred " ++ pprint infer
-            _ -> error $ "Can't infer type for App, expected Pi: " ++ pprint e ++ " inferred " ++ pprint infer
-    Type -> VType
-    _ -> error $ "Couldn't infer type for " ++ show e
+typecheck m a = runTyping (0, [], []) $ do
+            checkType a
+            checkExprHasType m (VClosure [] a)
 
-typecheck m a =
-    checkType (0, [], []) a && checkExpr (0, [], []) m (VClosure [] a)
-
-typecheckEnv env m a =
-    checkType env a && checkExpr env m (VClosure [] a)
-
+-- addDecl decl = do
+    -- let Def name tpe body = decl
+    -- checkType env tpe
 
 instance Pretty Decl where
     pretty (Def id tpe body) = pretty id <+> ":" <+> pretty (PEnv 0 tpe) <+> "=" <+> pretty (PEnv 0 body)
@@ -145,22 +176,26 @@ foldLam expr = go expr ([], expr) where
 instance Pretty (PEnv Expr) where
     pretty (PEnv prec e) = case e of
         Var id -> pretty id
-        App e1 e2 -> wrap 10 prec $ pretty (PEnv 10 e1) <+> pretty (PEnv 11 e2)
+        App e1 e2 -> wrap 10 prec $ pretty (PEnv 10 e1) <> "·" <> pretty (PEnv 11 e2)
         Lam id expr -> let
             (ids, expr) = foldLam e
             foldedIds = foldl (\a i -> a <+> pretty i) "λ" ids
-            in wrap 5 prec $ foldedIds <+> "->" <+> pretty (PEnv 5 expr)
+            in wrap 5 prec $ foldedIds <+> "→" <+> pretty (PEnv 5 expr)
         Let id v t b -> parens $ "let" <+> pretty id <+> "=" <+> pretty v <+> pretty b
-        Pi "_" tpe body -> wrap 5 prec $ pretty (PEnv 6 tpe) <+> "->" <+> pretty (PEnv 5 body)
-        Pi id tpe body ->  wrap 5 prec $ parens (pretty id <+> ":" <+> pretty (PEnv 5 tpe)) <+> "->" <+> pretty (PEnv 5 body)
+        Pi "_" tpe body -> wrap 5 prec $ pretty (PEnv 6 tpe) <+> "→" <+> pretty (PEnv 5 body)
+        Pi id tpe body ->  wrap 5 prec $ parens (pretty id <+> ":" <+> pretty (PEnv 5 tpe)) <+> "→" <+> pretty (PEnv 5 body)
         Type -> "U"
 
 instance Pretty (PEnv Val) where
     pretty (PEnv prec e) = case e of
         VGen i -> pretty i
-        VApp e1 e2 -> wrap 10 prec $ pretty (PEnv 10 e1) <+> pretty (PEnv 11 e2)
+        VApp e1 e2 -> wrap 10 prec $ pretty (PEnv 10 e1) <+> "·" <+> pretty (PEnv 11 e2)
         VType -> "U"
-        VClosure env expr -> braces (pretty env <+> "->" <+> pretty (PEnv prec expr))
+        VClosure env expr -> prettyEnv env <+> "⊢" <+> pretty (PEnv prec expr)
+
+prettyEnv [] = "∅"
+prettyEnv ls = list $ fmap p ls
+  where p (i, t) = pretty i <> "=" <> pretty t
 
 instance Pretty Val where pretty val = pretty (PEnv 0 val)
 instance Pretty Expr where pretty val = pretty (PEnv 0 val)
