@@ -37,17 +37,31 @@ theorems = do
     -- p "(A : U) -> (x : A) -> (P : A -> U) -> P x"
     -- p "λ A -> λ x -> λ y -> a (λ b -> c c (d d))"
     -- p [s| λ A x y -> x y |]
-    let proof = pp "λ A x y -> x y"
-    let theorem = pp "(A : U) -> (A -> A) -> A -> A"
+    -- let proof = pp "λ A x y -> x y"
+    -- let theorem = pp "(A : U) -> (A -> A) -> A -> A"
     -- prove theorem proof
     -- prove (pp "(A : U) -> (F : A -> U) -> U") (pp "λ A -> A")
-    -- prove (pp "(A : U) -> A -> A") (pp "λ A a -> a")
-    prove (pp "(A : U) -> (List : U -> U) -> (single : A -> List A) -> A -> List A") (pp "λ a Ls cons l -> cons l")
+    prove (pp "(Int : U) -> Int -> Int") (pp "λ Int a -> a")
+    -- prove (pp "(A : U) -> (List : U -> U) -> (single : A -> List A) -> A -> List A") (pp "λ a Ls cons l -> cons l")
     -- print $ pprint $ eval [("Int", VType)] (pp [s| (λ x -> x) Int |])
 
 main :: IO ()
 main = do
-    theorems
+    -- theorems
+    -- let r = typecheckEnv (2, Rho [("Bool", VGen 1), ("Int", VGen 0)],
+            -- Gamma [("Bool", VClosure (Rho []) Type), ("Int", VClosure (Rho []) Type)])
+                -- (pp "λ a b -> a ") (pp "Int -> Bool -> Int")
+    let r = runTyping (0, Rho [], Gamma []) $ do
+                env <- addDecl (Def "id" (pp "(A : U) -> A -> A") (pp "λ A i -> i"))
+                return  env
+    case r of
+        Right r -> do
+            let a = typecheckEnv r (pp "id U") (pp "U -> U")
+            case a of
+                Left e -> putStrLn $ pprint e
+                _ -> return ()
+        Left e -> putStrLn e
+    -- putStrLn $ pprint $ eval (Rho [("id", VClosure (Rho []) (pp "λ i -> i") )]) $ pp "id id"
     -- print $ pretty $ pd [s|
         -- id : (A : U) -> A -> A = \ A a -> a;
         -- modusPonens : (A : U) -> (B : U) -> (A -> B) -> A -> B = λ A B f a -> f a;
