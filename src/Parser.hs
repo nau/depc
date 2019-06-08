@@ -79,6 +79,19 @@ letins = do
     e2 <- expr
     return $ Let name e1 tpe e2
 
+caseClause = do
+    name <- identifier
+    symbol "->"
+    e <- expr
+    symbol ";"
+    return $ Case name e
+
+split = do
+    symbol "split"
+    cases <- braces $ many caseClause
+    return $ Split cases
+
+
 expr = try letins <|> lambda <|> try fun <|> try piType <|> exp1
 exp1 = apply <|> exp2
 exp2 = universe <|> var <|> parens expr
@@ -100,7 +113,22 @@ apply = try $ do
     args <- some exp2
     return (foldl App f args) <?> "apply"
 
-decl = do
+datadecl = do
+    symbol "data"
+    name <- identifier
+    symbol "="
+    cons <- constructor `sepBy` symbol "|"
+    symbol ";"
+    return $ Data name cons
+
+
+constructor = do
+    name <- identifier
+    symbol ":"
+    tpe <- expr
+    return $ Constructor name tpe
+
+def = do
     name <- identifier
     symbol ":"
     tpe <- expr
@@ -109,6 +137,8 @@ decl = do
     symbol ";"
     return $ Def name tpe e
     <?> "declaration"
+
+decl = try datadecl <|> def
 
 decls = some decl
 

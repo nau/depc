@@ -53,13 +53,18 @@ main = do
             -- Gamma [("Bool", VClosure (Rho []) Type), ("Int", VClosure (Rho []) Type)])
                 -- (pp "λ a b -> a ") (pp "Int -> Bool -> Int")
     let defaultTEnv = addDecls emptyTEnv $ pd [s|
+                data Bool = true : Bool | false : Bool;
+                data Nat = Z : Nat | S : Nat -> Nat;
                 id : (A : U) -> A -> A = \ A a -> a;
+                asdf : Bool -> Bool = \ x -> false;
+                one : Nat = S Z;
                 modusPonens : (A : U) -> (B : U) -> (A -> B) -> A -> B = λ A B f a -> f a;
             |]
     let res = do
             tenv <- defaultTEnv
             addDecls tenv $ pd [s| Nat : U = U; |]
     case res of
-        Right r -> putStrLn $ pprint r
+        Right r@(_, rho, _) -> do
+            putStrLn $ pprint r
+            putStrLn $ pprint $ eval (rho) $ pp "one"
         Left e -> putStrLn e
-    -- putStrLn $ pprint $ eval (Rho [("id", VClosure (Rho []) (pp "λ i -> i") )]) $ pp "id id"

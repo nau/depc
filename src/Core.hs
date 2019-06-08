@@ -31,8 +31,12 @@ data Expr
   | Lam Id Expr
   | Let Id Expr Expr Expr
   | Pi Id Expr Expr
+  | Sum Id [Id]
+  | Split [Case]
   | Type
   deriving (Show, Eq)
+
+data Case = Case Id Expr deriving (Show, Eq)
 
 data Val
   = VGen Int
@@ -41,7 +45,11 @@ data Val
   | VClosure Rho Expr
   deriving (Show, Eq)
 
-data Decl = Def Id Expr Expr deriving (Show)
+data Decl = Def Id Expr Expr
+          | Data Id [Constructor]
+          deriving (Show)
+
+data Constructor = Constructor Id Expr deriving (Show)
 
 -- Type checking monad
 type TEnv = (Int, Rho, Gamma)
@@ -188,15 +196,31 @@ typecheckEnv tenv@(_, ρ, _) m a = runTyping tenv $ do
     checkExprHasType m (VClosure ρ a)
 
 
-addDecl1 (Def name tpe body) tenv@(k, r, g) =
-    (k, updateRho r name (eval r body),
-        updateGamma g name (eval r tpe))
+addDecl1 (Def name tpe body) tenv@(k, rho, gamma) =
+    (k, updateRho rho name (eval rho body),
+        updateGamma gamma name (eval rho tpe))
+addDecl1 (Data name cons) tenv@(k, rho, gamma) = do
+    let v = VGen k
+    let r' = updateRho rho name v
+    let g' = updateGamma gamma name (VClosure rho Type)
+    foldl addCon (k + 1, r', g') cons
+
+  where addCon (k, rho, gamma) (Constructor con tpe) = do
+            let v = VGen k
+            let r' = updateRho rho con v
+            let g' = updateGamma gamma con (VClosure rho tpe)
+            (k + 1, r', g')
 
 addDecl :: TEnv -> Decl -> Either String TEnv
-addDecl tenv decl = runTyping tenv $ do
-    let Def name tpe body = decl
-    checkType tpe
-    addDecl1 decl <$> ask
+addDecl tenv@(_, rho, _) decl = runTyping tenv $
+    case decl of
+        Def name tpe body -> do
+            checkType tpe
+            let vtpe  = eval rho tpe
+            checkExprHasType body vtpe
+            addDecl1 decl <$> ask
+        Data name cons -> return $ addDecl1 decl tenv
+
 
 addDecls tenv decls = foldM addDecl tenv decls
 
@@ -226,7 +250,7 @@ instance Pretty (PEnv Expr) where
 instance Pretty (PEnv Val) where
     pretty (PEnv prec e) = case e of
         VGen i -> pretty i
-        VApp e1 e2 -> wrap 10 prec $ pretty (PEnv 10 e1) <+> "·" <+> pretty (PEnv 11 e2)
+        VApp e1 e2 -> wrap 10 prec $ pretty (PEnv 10 e1) <> "·" <> pretty (PEnv 11 e2)
         VType -> "Ú"
         VClosure (Rho env) expr -> prettyEnv env <+> "⊢" <+> pretty (PEnv prec expr)
 
