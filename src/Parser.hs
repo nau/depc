@@ -2,6 +2,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 module Parser where
 import qualified Data.List as List
+import qualified Data.List.NonEmpty as NonEmpty
 import Data.Maybe
 import Data.String
 import Data.Void
@@ -9,6 +10,7 @@ import Control.Monad
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
+import Debug.Trace
 
 import Language.Haskell.TH
 import Language.Haskell.TH.Quote
@@ -32,8 +34,12 @@ commaSep p  = p `sepBy` comma
 trailCommaSep p  = p `sepEndBy` comma
 semiSep  p  = p `sepBy` semi
 
+keywords = ["let", "in", "data"]
 
-identifier = lexeme $ try $ (:) <$> letterChar <*> many alphaNumChar
+identifier = lexeme $ do
+    ident <- (:) <$> letterChar <*> many alphaNumChar
+    when (ident `elem` keywords) $ unexpected . Label . NonEmpty.fromList $ "reserved " ++ ident
+    return ident
 
 
 telescope = identifier
@@ -47,7 +53,7 @@ ptele = parens $ do
     return $ PTele e1 e2
 
 var :: Parser Expr
-var = (lexeme $ try $ Var <$> identifier) <?> "var expected"
+var = lexeme (try $ Var <$> identifier) <?> "var expected"
 
 universe = symbol "U" >> return Type
 
@@ -60,7 +66,20 @@ lambda = do
     return $ foldr Lam e teles
     <?> "lambda expression"
 
-expr = lambda <|> try fun <|> try piType <|> exp1
+letins = do
+    symbol "let"
+    name <- identifier
+    symbol ":"
+    tpe <- expr
+    traceM $ "let tpe = " ++ show tpe
+    symbol "="
+    e1 <- expr
+    traceM $ "let e1 = " ++ show e1
+    symbol "in"
+    e2 <- expr
+    return $ Let name e1 tpe e2
+
+expr = try letins <|> lambda <|> try fun <|> try piType <|> exp1
 exp1 = apply <|> exp2
 exp2 = universe <|> var <|> parens expr
 

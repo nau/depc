@@ -30,20 +30,21 @@ theorems = do
             let ss = pprint exp
             putStrLn $ ss ++ " ==> " ++ show (pp ss == exp)
             putStrLn ""
-    -- p "a (b (c (d e f))) g"
-    -- p "a (λ b -> c c (d d))"
-    -- p "A -> (B x -> U) -> D"
-    -- p "(A : U) -> B"
-    -- p "(A : U) -> (x : A) -> (P : A -> U) -> P x"
-    -- p "λ A -> λ x -> λ y -> a (λ b -> c c (d d))"
-    -- p [s| λ A x y -> x y |]
-    -- let proof = pp "λ A x y -> x y"
-    -- let theorem = pp "(A : U) -> (A -> A) -> A -> A"
-    -- prove theorem proof
-    -- prove (pp "(A : U) -> (F : A -> U) -> U") (pp "λ A -> A")
+    p "a (b (c (d e f))) g"
+    p "a (λ b -> c c (d d))"
+    p "A -> (B x -> U) -> D"
+    p "(A : U) -> B"
+    p "(A : U) -> (x : A) -> (P : A -> U) -> P x"
+    p "λ A -> λ x -> λ y -> a (λ b -> c c (d d))"
+    p [s| λ A x y -> x y |]
+    p [s| let a : U = U in let b : U -> U = λ x -> x in b a |]
+    let proof = pp "λ A x y -> x y"
+    let theorem = pp "(A : U) -> (A -> A) -> A -> A"
+    prove theorem proof
+    prove (pp "(A : U) -> (F : A -> U) -> U") (pp "λ A -> A")
     prove (pp "(Int : U) -> Int -> Int") (pp "λ Int a -> a")
-    -- prove (pp "(A : U) -> (List : U -> U) -> (single : A -> List A) -> A -> List A") (pp "λ a Ls cons l -> cons l")
-    -- print $ pprint $ eval [("Int", VType)] (pp [s| (λ x -> x) Int |])
+    prove (pp "(A : U) -> (List : U -> U) -> (single : A -> List A) -> A -> List A") (pp "λ a Ls cons l -> cons l")
+    print $ pprint $ eval (Rho [("Int", VType)]) (pp [s| (λ x -> x) Int |])
 
 main :: IO ()
 main = do

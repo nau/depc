@@ -83,7 +83,7 @@ eval env e = let
         Type          -> VType
         Lam{}         -> VClosure env e
         Pi{}          -> VClosure env e
-    in traceShow (pretty e <+> "↦" <+> pretty res) res
+    in {- traceShow (pretty e <+> "↦" <+> pretty res) -} res
 
 
 whnf :: Val -> Val
@@ -140,7 +140,7 @@ inferExprType e = do
     case e of
         Var id -> do
             typeVal <- lookupGamma id γ
-            traceM $ show ("Infer" <+> pretty e <+> ":" <+> pretty typeVal)
+            -- traceM $ show ("Infer" <+> pretty e <+> ":" <+> pretty typeVal)
             return typeVal
         App e1 e2 -> do
             inferred <- inferExprType e1
@@ -149,8 +149,8 @@ inferExprType e = do
                 VClosure env (Pi x xType piBody) -> do
                     checkExprHasType e2 (VClosure env xType)
                     let res = VClosure (updateRho env x (VClosure ρ e2)) piBody
-                    traceShowM $ "App" <+> pretty e1 <+> colon <+> pretty wh <+> "⚈" <+>
-                        pretty e2 <+> colon <+> pretty (VClosure env xType) <+> "≡" <+> pretty res
+                    {- traceShowM $ "App" <+> pretty e1 <+> colon <+> pretty wh <+> "⚈" <+>
+                        pretty e2 <+> colon <+> pretty (VClosure env xType) <+> "≡" <+> pretty res -}
                     return res
                 _ -> throwError $ "Can't infer type for App, expected Pi: " ++ pprint e ++ " inferred " ++ pprint inferred
         Type -> return VType
@@ -160,7 +160,8 @@ eqVal :: Int -> Val -> Val -> Bool
 eqVal k u1 u2 = do
     let wh1 = whnf u1
         wh2 = whnf u2
-    traceShow ("EQ" <+> pretty wh1 <+> "≟≟≟" <+> pretty wh2) $ case (wh1, wh2) of
+    -- traceShow ("EQ" <+> pretty wh1 <+> "≟≟≟" <+> pretty wh2) $
+    case (wh1, wh2) of
         (VType     , VType     ) -> True
         (VApp f1 a1, VApp f2 a2) -> eqVal k f1 f2 && eqVal k a1 a2
         (VGen k1   , VGen k2   ) -> k1 == k2
@@ -212,14 +213,14 @@ foldLam expr = go expr ([], expr) where
 instance Pretty (PEnv Expr) where
     pretty (PEnv prec e) = case e of
         Var id -> pretty id
-        App e1 e2 -> wrap 10 prec $ pretty (PEnv 10 e1) <> "·" <> pretty (PEnv 11 e2)
+        App e1 e2 -> wrap 10 prec $ pretty (PEnv 10 e1) <+> pretty (PEnv 11 e2)
         Lam id expr -> let
             (ids, expr) = foldLam e
             foldedIds = foldl (\a i -> a <+> pretty i) "λ" ids
-            in wrap 5 prec $ foldedIds <+> "→" <+> pretty (PEnv 5 expr)
-        Let id v t b -> parens $ "let" <+> pretty id <+> "=" <+> pretty v <+> pretty b
-        Pi "_" tpe body -> wrap 5 prec $ pretty (PEnv 6 tpe) <+> "→" <+> pretty (PEnv 5 body)
-        Pi id tpe body ->  wrap 5 prec $ parens (pretty id <+> ":" <+> pretty (PEnv 5 tpe)) <+> "→" <+> pretty (PEnv 5 body)
+            in wrap 5 prec $ foldedIds <+> "->" <+> pretty (PEnv 5 expr)
+        Let id v t b -> wrap 3 prec $ "let" <+> pretty id <+> colon <+> pretty t <+> "=" <+> pretty v <+> "in" <+> pretty b
+        Pi "_" tpe body -> wrap 5 prec $ pretty (PEnv 6 tpe) <+> "->" <+> pretty (PEnv 5 body)
+        Pi id tpe body ->  wrap 5 prec $ parens (pretty id <+> ":" <+> pretty (PEnv 5 tpe)) <+> "->" <+> pretty (PEnv 5 body)
         Type -> "U"
 
 instance Pretty (PEnv Val) where
