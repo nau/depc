@@ -12,6 +12,8 @@ import Control.Monad.Reader
 import qualified Data.List as List
 import Data.Maybe
 import Data.String
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import Data.Void
 import Control.Monad
 import Text.Megaparsec
@@ -27,20 +29,23 @@ newtype Gamma = Gamma Env deriving (Show, Eq)
 
 data Expr
   = Var Id
+  | Con Id [Expr]
   | App Expr Expr
   | Lam Id Expr
   | Let Id Expr Expr Expr
   | Pi Id Expr Expr
   | Sum Id [Id]
-  | Split [Case]
+  | Split Expr [Case]
   | Type
   deriving (Show, Eq)
 
-data Case = Case Id Expr deriving (Show, Eq)
+data Case = Case Id [Id] Expr deriving (Show, Eq)
 
 data Val
   = VGen Int
+  | VCon Id [Val]
   | VApp Val Val
+--   | VPi Val Val
   | VType
   | VClosure Rho Expr
   deriving (Show, Eq)
@@ -52,10 +57,14 @@ data Decl = Def Id Expr Expr
 data Constructor = Constructor Id Expr deriving (Show)
 
 -- Type checking monad
-type TEnv = (Int, Rho, Gamma)
+type Constructors = Map Id Expr
+type TEnv = (Int, Rho, Gamma, Constructors)
 
 emptyTEnv :: TEnv
-emptyTEnv = (0, Rho [], Gamma [])
+emptyTEnv = (0, Rho [], Gamma [], Map.empty)
+
+initTEnv :: Constructors -> TEnv
+initTEnv cons = (0, Rho [], Gamma [], cons)
 
 type Typing a = ReaderT TEnv (Except String) a
 
@@ -78,19 +87,85 @@ lookupGamma id (Gamma env) = case lookup id env of
     Nothing -> throwError $ show $ "Couldn't find" <+> squotes (pretty id) <+> "in Γ" <+> prettyEnv env
 
 
+type Resolver a = ReaderT Constructors (ExceptT String Identity) a
+
+unApps (App u v) ws = unApps u (v : ws)
+unApps u         ws = (u, ws)
+
+runResolver :: Resolver a -> Either String a
+runResolver x = runIdentity $ runExceptT $ runReaderT x Map.empty
+
+resolveDecls :: [Decl] -> Resolver ([Decl], Constructors)
+resolveDecls []     = return ([], Map.empty)
+resolveDecls (d:ds) = do
+  (decl, cons)  <- resolveDecl d
+  (decls, cons') <- local (Map.union cons) $ resolveDecls ds
+  return (decl : decls, Map.union cons' cons)
+
+
+resolveDecl :: Decl -> Resolver (Decl, Constructors)
+resolveDecl decl = case decl of
+    Def id tpe body -> do
+        t <- resolve tpe
+        b <- resolve body
+        return (Def id t b, Map.empty)
+    Data id cons -> return (decl, foldl (\acc (Constructor nm _) -> Map.insert nm (Var id) acc) Map.empty cons)
+
+
+
+resolve :: Expr -> Resolver Expr
+resolve e = case e of
+    Var x         -> do
+        cons <- ask
+        case Map.lookup x cons of
+            Just _ -> return $ Con x []
+            Nothing -> return e
+    Con name ts   -> return e
+    App e1 e2     -> let (head, spine) = unApps e1 [e2]
+                     in mkApps <$> resolve head <*> mapM resolve spine
+    Let x e1 e2 e3 -> Let x <$> resolve e1 <*> resolve e2 <*> resolve e3
+    Type          -> return Type
+    Pi id tpe body -> Pi id <$> resolve tpe <*> resolve body
+    Lam x body         -> Lam x <$> resolve body
+    Split tpe cases -> Split <$> resolve tpe <*> mapM (\(Case con args expr) -> Case con args <$> resolve expr) cases
+
+mkApps (Con l us) vs = Con l (us ++ vs)
+mkApps t ts          = foldl App t ts
+
+
+lookupCase :: Id -> [Case] -> Maybe Case
+lookupCase x cases = case cases of
+    c@(Case con args expr) : cs | x == con    -> Just c
+                                | otherwise -> lookupCase x cs
+
+
 app :: Val -> Val -> Val
 app (VClosure env (Lam x e)) arg = eval (updateRho env x arg) e
-app e arg = VApp e arg
+app (VClosure env (Split tpe cases)) (VCon id args) =
+    case lookupCase id cases of
+        Just (Case _ params body) | length params == length args -> let
+            bindings = zip params args
+            rho' = foldl (\rho (p, a) -> updateRho rho p a) env bindings
+            in traceShow "Here" $ eval rho' body
+        Just (Case _ params body) -> error $ show $
+            "splitting on not fully applied constructor" <+> pretty id <+>
+            "expected" <+> pretty (length params) <+> "but given" <+> pretty (length args)
+        _     -> error $ "app: missing case in split for " ++ id
+app e arg = {- trace (show $ pretty $ VApp e arg) $ -} VApp e arg
+
 
 eval :: Rho -> Expr -> Val
-eval env e = let
+eval rho e = let
     res = case e of
-        Var x         -> lookupRho x env
-        App e1 e2     -> app (eval env e1) (eval env e2)
-        Let x e1 _ e3 -> eval (updateRho env x (eval env e1)) e3
+        Var x         -> lookupRho x rho
+        Con name ts   -> VCon name (map (eval rho) ts)
+        App e1 e2     -> app (eval rho e1) (eval rho e2)
+        Let x e1 _ e3 -> eval (updateRho rho x (eval rho e1)) e3
         Type          -> VType
-        Lam{}         -> VClosure env e
-        Pi{}          -> VClosure env e
+        -- Pi name tpe body -> VPi (eval rho tpe) (eval rho (Lam name body))
+        Pi{}          -> VClosure rho e
+        Lam{}         -> VClosure rho e
+        Split{}       -> VClosure rho e
     in {- traceShow (pretty e <+> "↦" <+> pretty res) -} res
 
 
@@ -107,8 +182,9 @@ checkType e = do
 tr :: Pretty a => a -> b -> b
 tr = traceShow . pretty
 
+checkExprHasType :: Expr -> Val -> Typing ()
 checkExprHasType expr typeVal = do
-    (k, ρ, γ) <- ask
+    (k, ρ, γ, datadecls) <- ask
     let whTypeVal = whnf typeVal
     case (expr, whTypeVal) of
         (Lam x body, VClosure env (Pi y yType piBody)) -> do
@@ -117,22 +193,33 @@ checkExprHasType expr typeVal = do
                 γ' = updateGamma γ x (VClosure env yType)
             let txt = "ρ:" <+> pretty ρ' <+> "Γ:" <+> pretty γ'
             traceShowM txt
-            local (const (k + 1, ρ', γ')) $
+            local (const (k + 1, ρ', γ', datadecls)) $
                 checkExprHasType body (VClosure (updateRho env y vgen) piBody)
         (Lam{}, wrong) -> throwError $ "Expected Pi but got " ++ pprint wrong
+        (Con id args, _) ->
+            case Map.lookup id datadecls of
+                Just ty -> return ()
+                Nothing -> throwError $ show $ "Unknown constructor" <+> pretty id <+> pretty (show datadecls)
+
+        (Split tpe cases, VClosure env (Pi y yType piBody)) -> do
+            checkType tpe
+            let splitTypeVal = eval ρ tpe
+            if eqVal k splitTypeVal typeVal
+            then return ()
+            else throwError $ show $ "AAA:" <+> pretty splitTypeVal <+> "!=" <+> pretty typeVal
         (Pi x xType body, VType) -> do
             checkType xType
             let ρ' = updateRho ρ x (VGen k)
                 γ' = updateGamma γ x (VClosure ρ xType)
             let txt = "ρ:" <+> pretty ρ' <+> "Γ:" <+> pretty γ'
             -- traceShowM txt
-            local (const (k + 1, ρ', γ')) $ checkType body
+            local (const (k + 1, ρ', γ', datadecls)) $ checkType body
         (Pi x a b, _) -> throwError $ "Expected Type but got" ++ pprint whTypeVal ++ " for " ++ pprint expr
         (Let x e eType body, _) -> do
             checkType eType
             let ρ' = updateRho ρ x (eval ρ e)
                 γ' = updateGamma γ x (eval ρ eType)
-            local (const (k, ρ', γ')) $ checkExprHasType body typeVal
+            local (const (k, ρ', γ', datadecls)) $ checkExprHasType body typeVal
         _ -> do
             inferredTypeVal <- inferExprType expr
             if eqVal k inferredTypeVal typeVal
@@ -144,7 +231,7 @@ checkExprHasType expr typeVal = do
 
 inferExprType :: Expr -> Typing Val
 inferExprType e = do
-    (k, ρ, γ) <- ask
+    (k, ρ, γ, datadecls) <- ask
     case e of
         Var id -> do
             typeVal <- lookupGamma id γ
@@ -189,40 +276,48 @@ eqVal k u1 u2 = do
 
 
 typecheck :: Expr -> Expr -> Either String ()
-typecheck = typecheckEnv (0, Rho [], Gamma [])
+typecheck = typecheckEnv emptyTEnv
 
-typecheckEnv tenv@(_, ρ, _) m a = runTyping tenv $ do
+typecheckEnv tenv@(_, ρ, _, _) m a = runTyping tenv $ do
     checkType a
     checkExprHasType m (VClosure ρ a)
 
 
-addDecl1 (Def name tpe body) tenv@(k, rho, gamma) =
+addDecl :: Decl -> TEnv -> TEnv
+addDecl (Def name tpe body) (k, rho, gamma, datadecls) =
     (k, updateRho rho name (eval rho body),
-        updateGamma gamma name (eval rho tpe))
-addDecl1 (Data name cons) tenv@(k, rho, gamma) = do
+        updateGamma gamma name (eval rho tpe), datadecls)
+addDecl (Data name cons) (k, rho, gamma, datadecls) = do
     let v = VGen k
     let r' = updateRho rho name v
     let g' = updateGamma gamma name (VClosure rho Type)
-    foldl addCon (k + 1, r', g') cons
+    -- let cs = foldl (\acc (Constructor nm _) -> Map.insert nm (Var name) acc) Map.empty cons
+    foldl addCon (k + 1, r', g', datadecls) cons
 
-  where addCon (k, rho, gamma) (Constructor con tpe) = do
+  where addCon (k, rho, gamma, datadecls) (Constructor con tpe) = do
             let v = VGen k
             let r' = updateRho rho con v
             let g' = updateGamma gamma con (VClosure rho tpe)
-            (k + 1, r', g')
+            (k + 1, r', g', datadecls)
 
-addDecl :: TEnv -> Decl -> Either String TEnv
-addDecl tenv@(_, rho, _) decl = runTyping tenv $
+checkDecl :: TEnv -> Decl -> Either String TEnv
+checkDecl tenv@(_, rho, _, _) decl = runTyping tenv $
     case decl of
         Def name tpe body -> do
             checkType tpe
             let vtpe  = eval rho tpe
             checkExprHasType body vtpe
-            addDecl1 decl <$> ask
-        Data name cons -> return $ addDecl1 decl tenv
+            return tenv
+        Data name cons -> return tenv
 
 
-addDecls tenv decls = foldM addDecl tenv decls
+
+addDecls :: TEnv -> [Decl] -> Either String TEnv
+addDecls tenv decls = do
+    let env = foldr addDecl tenv decls
+    traceM $ "AAAddDecls" ++ show env
+    -- foldM checkDecl env decls
+    return env
 
 instance Pretty Decl where
     pretty (Def id tpe body) = pretty id <+> ":" <+> pretty (PEnv 0 tpe) <+> "=" <+> pretty (PEnv 0 body)
@@ -237,26 +332,36 @@ foldLam expr = go expr ([], expr) where
 instance Pretty (PEnv Expr) where
     pretty (PEnv prec e) = case e of
         Var id -> pretty id
+        Con id args -> wrap 10 prec $ pretty id <+> foldl (\a b -> a <+> pretty b) "" args
         App e1 e2 -> wrap 10 prec $ pretty (PEnv 10 e1) <+> pretty (PEnv 11 e2)
         Lam id expr -> let
             (ids, expr) = foldLam e
             foldedIds = foldl (\a i -> a <+> pretty i) "λ" ids
             in wrap 5 prec $ foldedIds <+> "->" <+> pretty (PEnv 5 expr)
+        Split tpe cases -> wrap 3 prec $ "split" <+> parens (pretty tpe) <+> braces (pretty cases)
         Let id v t b -> wrap 3 prec $ "let" <+> pretty id <+> colon <+> pretty t <+> "=" <+> pretty v <+> "in" <+> pretty b
         Pi "_" tpe body -> wrap 5 prec $ pretty (PEnv 6 tpe) <+> "->" <+> pretty (PEnv 5 body)
         Pi id tpe body ->  wrap 5 prec $ parens (pretty id <+> ":" <+> pretty (PEnv 5 tpe)) <+> "->" <+> pretty (PEnv 5 body)
         Type -> "U"
 
+instance Pretty Case where
+    pretty (Case con ids e) = pretty con <+> list (map pretty ids) <+> "->" <+> pretty e <+> semi
 instance Pretty (PEnv Val) where
     pretty (PEnv prec e) = case e of
         VGen i -> pretty i
+        VCon id args -> parens $ pretty id <+> foldl (\a b -> a <+> pretty b) "" args
         VApp e1 e2 -> wrap 10 prec $ pretty (PEnv 10 e1) <> "·" <> pretty (PEnv 11 e2)
-        VType -> "Ú"
-        VClosure (Rho env) expr -> prettyEnv env <+> "⊢" <+> pretty (PEnv prec expr)
+        -- VPi e1 e2 -> wrap 5 prec $ pretty e1 <+> "->>>" <+> pretty e2
+        VType -> "Û"
+        VClosure (Rho env) expr -> {- prettyEnv env <+> -} "⊢" <+> pretty (PEnv prec expr)
 
 instance Pretty Rho where pretty (Rho env) = prettyEnv env
 instance Pretty Gamma where pretty (Gamma env) = prettyEnv env
 
+instance Pretty TEnv where
+    pretty t@(k, rho, gamma, datadecls) = "TEnv"
+
+-- prettyEnv _ = ""
 prettyEnv [] = "∅"
 prettyEnv ls = list $ fmap p ls
   where p (i, t) = pretty i <> "=" <> pretty t

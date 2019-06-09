@@ -34,7 +34,7 @@ commaSep p  = p `sepBy` comma
 trailCommaSep p  = p `sepEndBy` comma
 semiSep  p  = p `sepBy` semi
 
-keywords = ["let", "in", "data"]
+keywords = ["let", "in", "data", "case", "of"]
 
 identifier = lexeme $ do
     ident <- (:) <$> letterChar <*> many alphaNumChar
@@ -80,19 +80,20 @@ letins = do
     return $ Let name e1 tpe e2
 
 caseClause = do
-    name <- identifier
+    (con : params) <- some identifier
     symbol "->"
     e <- expr
     symbol ";"
-    return $ Case name e
+    return $ Case con params e
 
 split = do
     symbol "split"
+    tpe <- parens expr
     cases <- braces $ many caseClause
-    return $ Split cases
+    return $ Split tpe cases
 
 
-expr = try letins <|> lambda <|> try fun <|> try piType <|> exp1
+expr = try split <|> try letins <|> lambda <|> try fun <|> try piType <|> exp1
 exp1 = apply <|> exp2
 exp2 = universe <|> var <|> parens expr
 
