@@ -34,7 +34,7 @@ commaSep p  = p `sepBy` comma
 trailCommaSep p  = p `sepEndBy` comma
 semiSep  p  = p `sepBy` semi
 
-keywords = ["let", "in", "data", "case", "of"]
+keywords = ["let", "in", "data", "split"]
 
 identifier = lexeme $ do
     ident <- (:) <$> letterChar <*> many alphaNumChar
@@ -42,15 +42,13 @@ identifier = lexeme $ do
     return ident
 
 
-telescope = identifier
-
-data PTele = PTele Id Expr
+telescope = many ptele
 
 ptele = parens $ do
     e1 <- identifier
     symbol ":"
     e2 <- expr
-    return $ PTele e1 e2
+    return $ (e1, e2)
 
 var :: Parser Expr
 var = lexeme (try $ Var <$> identifier) <?> "var expected"
@@ -60,10 +58,10 @@ universe = symbol "U" >> return Type
 lambda :: Parser Expr
 lambda = do
     symbol "\\" <|> symbol "λ"
-    teles <- some telescope
+    idents <- some identifier
     symbol "->"
     e <- expr
-    return $ foldr Lam e teles
+    return $ foldr Lam e idents
     <?> "lambda expression"
 
 letins = do
@@ -104,7 +102,7 @@ fun = do
     return $ Pi "_" e1 e2
 
 piType = do
-    PTele name e2 <- ptele
+    (name, e2) <- ptele
     symbol "->"
     e <- expr
     return $ Pi name e2 e
@@ -117,17 +115,18 @@ apply = try $ do
 datadecl = do
     symbol "data"
     name <- identifier
+    tele <- telescope
     symbol "="
     cons <- constructor `sepBy` symbol "|"
     symbol ";"
-    return $ Data name cons
+    let tpe = foldr (\(nm, t) a -> Pi nm t a) Type tele
+    return $ Data name tpe cons
 
 
 constructor = do
     name <- identifier
-    symbol ":"
-    tpe <- expr
-    return $ Constructor name tpe
+    tele <- telescope
+    return $ Constructor name tele
 
 def = do
     name <- identifier
