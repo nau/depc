@@ -98,12 +98,12 @@ main = do
 
                     |]
             (ds, cons) <- runResolveDecls decls
-            let tenv = initTEnv cons
+            let tenv = initTEnv
             runTyping tenv $ checkDecls ds
             let env = addDecls ds tenv
-            return env
+            return (env, cons)
     case defaultTEnv of
-        Right r@(_, rho, _, cons) -> do
+        Right r@((_, rho, _), cons) -> do
             let ev = showEval cons rho
             putStrLn $ pprint rho
             putStrLn $ "RESULT = " ++ ev (pp "lb")

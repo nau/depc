@@ -61,13 +61,13 @@ data Constructor = Constructor Id Tele deriving (Show, Eq)
 
 -- Type checking monad
 type Constructors = Map Id Expr
-type TEnv = (Int, Rho, Gamma, Constructors)
+type TEnv = (Int, Rho, Gamma)
 
 emptyTEnv :: TEnv
-emptyTEnv = (0, Empty, Gamma [], Map.empty)
+emptyTEnv = (0, Empty, Gamma [])
 
-initTEnv :: Constructors -> TEnv
-initTEnv cons = (0, Empty, Gamma [], cons)
+initTEnv :: TEnv
+initTEnv = (0, Empty, Gamma [])
 
 type Typing a = ReaderT TEnv (Except String) a
 
@@ -214,7 +214,7 @@ checkType e = do
 
 checkExprHasType :: Expr -> Val -> Typing ()
 checkExprHasType expr typeVal = do
-    (k, ρ, γ, datadecls) <- ask
+    (k, ρ, γ) <- ask
     let whTypeVal = whnf typeVal
     -- traceShowM $ "checkExprHasType" <+> pretty expr <+> colon <+> pretty whTypeVal
     -- traceM $ "checkExprHasType " <> show expr
@@ -226,7 +226,7 @@ checkExprHasType expr typeVal = do
                 γ' = updateGamma γ x (VClosure env yType)
             let txt = "Lam: Pi, ρ:" <+> pretty ρ' <+> "Γ:" <+> pretty γ'
             -- traceShowM txt
-            local (const (k + 1, ρ', γ', datadecls)) $
+            local (const (k + 1, ρ', γ')) $
                 checkExprHasType body (VClosure (updateRho env y vgen) piBody)
         (Lam{}, wrong) -> throwError $ "Expected Pi but got " ++ pprint wrong
         (Sum _ bs, VType) -> forM_ bs $ \(Constructor id tele) ->
@@ -249,13 +249,13 @@ checkExprHasType expr typeVal = do
                 γ' = updateGamma γ x (VClosure ρ xType)
             let txt = "Pi : Type, ρ:" <+> pretty ρ' <+> "Γ:" <+> pretty γ'
             -- traceShowM txt
-            local (const (k + 1, ρ', γ', datadecls)) $ checkType body
+            local (const (k + 1, ρ', γ')) $ checkType body
         (Pi x a b, _) -> throwError $ "Expected Type but got" ++ pprint whTypeVal ++ " for " ++ pprint expr
         (Let x e eType body, _) -> do
             checkType eType
             let ρ' = updateRho ρ x (eval ρ e)
                 γ' = updateGamma γ x (eval ρ eType)
-            local (const (k, ρ', γ', datadecls)) $ checkExprHasType body whTypeVal
+            local (const (k, ρ', γ')) $ checkExprHasType body whTypeVal
         _ -> do
             inferredTypeVal <- inferExprType expr
             if eqVal k inferredTypeVal whTypeVal
@@ -266,7 +266,7 @@ checkExprHasType expr typeVal = do
 
 inferExprType :: Expr -> Typing Val
 inferExprType e = do
-    (k, ρ, γ, datadecls) <- ask
+    (k, ρ, γ) <- ask
     case e of
         Var id -> do
             typeVal <- lookupGamma id γ
@@ -319,7 +319,7 @@ eqVal k u1 u2 = do
 typecheck :: Expr -> Expr -> Either String ()
 typecheck = typecheckEnv emptyTEnv
 
-typecheckEnv tenv@(_, ρ, _, _) m a = runTyping tenv $ do
+typecheckEnv tenv@(_, ρ, _) m a = runTyping tenv $ do
     checkType a
     checkExprHasType m (VClosure ρ a)
 
@@ -330,7 +330,7 @@ checkDecls decls@(decl:ds) = do
     let (tele, body) = extractTeleBodies decl ([], [])
     checkTele tele
     local (addDecls [decl]) $ do
-        (k, rho, gamma, _) <- ask
+        (k, rho, gamma) <- ask
         checks tele rho body
         checkDecls ds
 
@@ -342,7 +342,7 @@ checkMutualDecls decls = do
     checkTele teles
     traceM $ "addDecls"
     local (addDecls decls) $ do
-        (k, rho, gamma, _) <- ask
+        (k, rho, gamma) <- ask
         checks teles rho bodies
     ask
 
@@ -375,23 +375,23 @@ checkTele :: Tele -> Typing ()
 checkTele []          = return ()
 checkTele ((x, a) : xas) = do
     checkType a
-    (k, ρ, γ, datadecls) <- ask
+    (k, ρ, γ) <- ask
     let ρ' = updateRho ρ x (VGen k)
         γ' = updateGamma γ x (eval ρ a)
-    local (const (k + 1, ρ', γ', datadecls)) $ checkTele xas
+    local (const (k + 1, ρ', γ')) $ checkTele xas
 
 
 addDecl :: Decl -> TEnv -> TEnv
-addDecl d@(Def name tpe body) (k, rho, gamma, datadecls) = do
+addDecl d@(Def name tpe body) (k, rho, gamma) = do
     let r' = D d rho
     let g' = {- traceShow ("Add def" <+> pretty name <+> pretty rho <+> pretty tpe) $ -}
                 updateGamma gamma name (VClosure rho tpe)
-    (k, r', g', datadecls)
-addDecl d@(Data name tpe cons) (k, rho, gamma, datadecls) = do
+    (k, r', g')
+addDecl d@(Data name tpe cons) (k, rho, gamma) = do
     let r' = D d rho
     let g' = {- traceShow ("Add data" <+> pretty name <+> colon <+> pretty tpe <+> pretty rho) $ -}
                 updateGamma gamma name (VClosure rho tpe)
-    (k, r', g', datadecls)
+    (k, r', g')
 
 
 addDecls :: [Decl] -> TEnv -> TEnv
@@ -451,8 +451,8 @@ prettyRho ρ = take 1 $ pr ρ
 
 instance Pretty Gamma where pretty (Gamma env) = prettyEnv env
 
-instance Pretty TEnv where
-    pretty t@(k, rho, gamma, datadecls) = "TEnv"
+-- instance Pretty TEnv where
+    -- pretty t@(k, rho, gamma) = "TEnv"
 
 -- prettyEnv _ = ""
 prettyEnv [] = "∅"
