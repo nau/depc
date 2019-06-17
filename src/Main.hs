@@ -106,8 +106,9 @@ main = do
     case defaultTEnv of
         Right r@(_, rho, _, cons) -> do
             let ev = showEval cons rho
-            -- putStrLn $ pprint rho
-            putStrLn $ ev (pp "efq Void ")
+            putStrLn $ pprint rho
+            -- putStrLn $ ev (pp "efq Void")
+            -- putStrLn $ ev (pp "test true")
             -- putStrLn $ ev (pp "plus two one")
             -- putStrLn $ ev (pp "not false")
             -- putStrLn $ ev (pp [s|

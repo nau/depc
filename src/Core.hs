@@ -276,7 +276,7 @@ inferExprType e = do
             case wh of
                 VClosure env (Pi x xType piBody) -> do
                     checkExprHasType e2 (VClosure env xType)
-                    let res = VClosure (updateRho env x (VClosure ρ e2)) piBody
+                    let res = VClosure (updateRho env x (eval ρ e2)) piBody
                     {- traceShowM $ "App" <+> pretty e1 <+> colon <+> pretty wh <+> "⚈" <+>
                         pretty e2 <+> colon <+> pretty (VClosure env xType) <+> "≡" <+> pretty res -}
                     return res
@@ -286,8 +286,7 @@ inferExprType e = do
 
 eqVal :: Int -> Val -> Val -> Bool
 eqVal k u1 u2 = do
-    let wh11 = {- traceShow u1 $ -} whnf u1
-        wh1 = {- traceShow wh11 $ -} whnf wh11
+    let wh1 = whnf u1
         wh2 = whnf u2
     -- traceShow ("EQ" <+> pretty wh1 <+> "≟≟≟" <+> pretty wh2) $
     case (wh1, wh2) of
