@@ -53,7 +53,10 @@ ptele = parens $ do
 var :: Parser Expr
 var = lexeme (try $ Var <$> identifier) <?> "var expected"
 
-universe = symbol "U" >> return Type
+universe = try $ do
+    symbol "U"
+    notFollowedBy alphaNumChar
+    return Type
 
 lambda :: Parser Expr
 lambda = do
