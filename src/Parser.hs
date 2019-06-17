@@ -88,13 +88,12 @@ caseClause = do
     (con : params) <- some identifier
     symbol "->"
     e <- expr
-    symbol ";"
     return $ Case con params e
 
 split = do
     symbol "split"
     tpe <- parens expr
-    cases <- braces $ many caseClause
+    cases <- braces $ caseClause `sepEndBy` semi
     return $ Split tpe cases
 
 
@@ -125,7 +124,6 @@ datadecl = do
     tele <- telescope
     symbol "="
     cons <- constructor `sepBy` symbol "|"
-    symbol ";"
     let tpe = foldr (\(nm, t) a -> Pi nm t a) Type tele
     return $ Data name tpe cons
 
@@ -142,14 +140,13 @@ def = do
     tpe <- expr
     symbol "="
     e <- expr
-    symbol ";"
     let (t, b) = teleToExpr tele tpe e
     return $ Def name t b
     <?> "declaration"
 
 decl = try datadecl <|> def
 
-decls = some decl
+decls = decl `sepEndBy1` semi
 
 toplevel = Left <$> try decls <|> Right <$> expr
 

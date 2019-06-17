@@ -65,14 +65,14 @@ main = do
             exists (A : U) (B : A -> U) : U = Sum A B;
             ∃ : (A : U) -> (B : A -> U) -> U = exists;
             Tuple (A : U) (B : U) : U = Sum A (\x -> B);
-            gtZ : Nat -> U = split (Nat -> U) { Z -> Void ; S x -> Unit; };
+            gtZ : Nat -> U = split (Nat -> U) { Z -> Void ; S x -> Unit };
             existsNatGtZ : ∃ Nat gtZ = Pair (S Z) (unit);
             tuple : Tuple Bool Nat = Pair false (S Z);
             id (A : U) (a : A) : A = a;
             neg (A : U) : U = A -> Void;
             ¬ : (A : U) -> U = neg;
             efq (C : U) : Void -> C = split (Void -> C) {};
-            natOrListBool : Nat -> U = split (Nat -> U) { Z -> Unit; S n -> List Bool; };
+            natOrListBool : Nat -> U = split (Nat -> U) { Z -> Unit; S n -> List Bool };
             u : natOrListBool Z = unit;
             lb : natOrListBool (S Z) = Cons true Nil;
             explosion (A : U) (a : A) (na : ¬ A) (B : U) : B = efq B (na a);
@@ -91,7 +91,7 @@ main = do
                 Cons x xs -> Cons (f x) (map A B f xs);
             };
 
-            not : Bool -> Bool = split (Bool -> Bool) { true -> false; false -> true; };
+            not : Bool -> Bool = split (Bool -> Bool) { true -> false; false -> true };
             one : Nat = S Z;
             two : Nat = S (S Z);
             plus : Nat -> Nat -> Nat = split (Nat -> Nat -> Nat) {
