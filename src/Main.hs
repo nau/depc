@@ -53,64 +53,62 @@ showEval cons rho expr = case runResolver (resolve expr) cons of
 
 main :: IO ()
 main = do
-    -- theorems
-    -- let r = typecheckEnv (2, Rho [("Bool", VGen 1), ("Int", VGen 0)],
-            -- Gamma [("Bool", VClosure (Rho []) Type), ("Int", VClosure (Rho []) Type)])
-                -- (pp "λ a b -> a ") (pp "Int -> Bool -> Int")
+    theorems
     let defaultTEnv = do
             let decls = pd [s|
-                        data Void = ;
-                        data Bool = true | false;
-                        data Nat = Z | S (n : Nat);
-                        data List (A : U) = Nil | Cons (n : Nat) (t : List A);
-                        data Id (A : U) (a : A) = refl (b : A);
-                        efq : (C : U) -> Void -> C = \CC -> split (Void -> CC) {};
-                        neg : (A : U) -> U = \A -> A -> Void;
-                        explosion : (A : U) -> A -> neg A -> (B : U) -> B =
-                            \AA a na B -> efq B (na a);
-                        id : (A : U) -> A -> A = λ A a -> a;
-                        append : (A : U) -> List A -> List A -> List A = \ A -> split (List A -> List A -> List A) {
-                            Nil -> id (List A);
-                            Cons x xs -> \ ys -> Cons x (append A xs ys);
-                        };
+            data Void = ;
+            data Unit = unit;
+            data Bool = true | false;
+            data Nat = Z | S (n : Nat);
+            data List (A : U) = Nil | Cons (e : A) (t : List A);
+            id : U -> U = λ a -> a;
+            neg : (A : U) -> U = \A -> A -> Void;
+            efq : (C : U) -> Void -> C = \CC -> split (Void -> CC) {};
+            natOrListBool : Nat -> U = split (Nat -> U) { Z -> Unit; S n -> List Bool; };
+            u : natOrListBool Z = unit;
+            lb : natOrListBool (S Z) = Cons true Nil;
+            explosion : (A : U) -> A -> neg A -> (B : U) -> B =
+                \AA a na B -> efq B (na a);
 
-                        reverse : (A : U) -> List A -> List A = \A -> split (List A -> List A) {
-                            Nil -> Nil;
-                            Cons x xs -> append A (reverse A xs) (Cons x Nil);
-                        };
+            append : (A : U) -> List A -> List A -> List A = \ A -> split (List A -> List A -> List A) {
+                Nil -> id (List A);
+                Cons x xs -> \ ys -> Cons x (append A xs ys);
+            };
 
-                        map : (A:U)->(B:U)->(f:A->B)->List A->List B = \A B f -> split (List A->List B ) {
-                            Nil -> Nil;
-                            Cons x xs -> Cons (f x) (map A B f xs);
-                        };
+            reverse : (A : U) -> List A -> List A = \A -> split (List A -> List A) {
+                Nil -> Nil;
+                Cons x xs -> append A (reverse A xs) (Cons x Nil);
+            };
 
-                        not : Bool -> Bool = split (Bool -> Bool) { true -> false; false -> true; };
-                        one : Nat = S Z;
-                        two : Nat = S (S Z);
-                        plus : Nat -> Nat -> Nat = split (Nat -> Nat -> Nat) {
-                            Z -> λ n -> n ;
-                            S m -> λ n -> S (plus m n);
-                        };
-                        three : Nat = plus two one;
-                        four : Nat = plus three one;
-                        modusPonens : (A : U) -> (B : U) -> (A -> B) -> A -> B = λ A B f a -> f a;
+            map : (A:U)->(B:U)->(f:A->B)->List A->List B = \A B f -> split (List A->List B ) {
+                Nil -> Nil;
+                Cons x xs -> Cons (f x) (map A B f xs);
+            };
+
+            not : Bool -> Bool = split (Bool -> Bool) { true -> false; false -> true; };
+            one : Nat = S Z;
+            two : Nat = S (S Z);
+            plus : Nat -> Nat -> Nat = split (Nat -> Nat -> Nat) {
+                Z -> λ n -> n ;
+                S m -> λ n -> S (plus m n);
+            };
+            three : Nat = plus two one;
+            four : Nat = plus three one;
+            modusPonens : (A : U) -> (B : U) -> (A -> B) -> A -> B = λ A B f a -> f a;
 
                     |]
             (ds, cons) <- runResolveDecls decls
             let tenv = initTEnv cons
-            env1 <- runTyping tenv $ checkDecls ds
-            -- traceM $ "After typing " ++ show env1
+            runTyping tenv $ checkDecls ds
             let env = addDecls ds tenv
-            -- traceShowM env
             return env
     case defaultTEnv of
         Right r@(_, rho, _, cons) -> do
             let ev = showEval cons rho
             putStrLn $ pprint rho
-            -- putStrLn $ ev (pp "efq Void")
-            -- putStrLn $ ev (pp "test true")
-            -- putStrLn $ ev (pp "plus two one")
-            -- putStrLn $ ev (pp "not false")
+            putStrLn $ "RESULT = " ++ ev (pp "lb")
+            putStrLn $ ev (pp "plus two one")
+            putStrLn $ ev (pp "not false")
             -- putStrLn $ ev (pp [s|
                 -- map Nat Nat (λ n -> S n) (reverse Nat (append Nat (Cons one Nil) (Cons two Nil)))
                 -- |])
