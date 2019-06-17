@@ -4,6 +4,7 @@ module Parser where
 import qualified Data.List as List
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.Maybe
+import Data.Char
 import Data.String
 import Data.Void
 import Control.Monad
@@ -34,10 +35,13 @@ commaSep p  = p `sepBy` comma
 trailCommaSep p  = p `sepEndBy` comma
 semiSep  p  = p `sepBy` semi
 
-keywords = ["let", "in", "data", "split"]
+keywords = ["let", "in", "data", "split", "λ"]
+reservedSymbols = ['=', '\\', '-', ':', ';', '(', ')', '{', '}']
 
 identifier = lexeme $ do
-    ident <- (:) <$> letterChar <*> many alphaNumChar
+    first <- satisfy (\s -> (isLetter s || isSymbol s) && notElem s reservedSymbols)
+    rest <- many alphaNumChar
+    let ident = first : rest
     when (ident `elem` keywords) $ unexpected . Label . NonEmpty.fromList $ "reserved " ++ ident
     return ident
 
