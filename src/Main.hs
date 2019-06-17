@@ -61,6 +61,12 @@ main = do
             data Bool = true | false;
             data Nat = Z | S (n : Nat);
             data List (A : U) = Nil | Cons (e : A) (t : List A);
+            data Sum (A : U) (B : A -> U) = Pair (x : A) (y : B x);
+            exists (A : U) (B : A -> U) : U = Sum A B;
+            Tuple (A : U) (B : U) : U = Sum A (\x -> B);
+            gtZ : Nat -> U = split (Nat -> U) { Z -> Void ; S x -> Unit; };
+            existsNatGtZ : exists Nat gtZ = Pair (S Z) (unit);
+            tuple : Tuple Bool Nat = Pair false (S Z);
             id (A : U) (a : A) : A = a;
             neg (A : U) : U = A -> Void;
             efq (C : U) : Void -> C = split (Void -> C) {};
@@ -108,6 +114,8 @@ main = do
             putStrLn $ "RESULT = " ++ ev (pp "lb")
             putStrLn $ ev (pp "plus two one")
             putStrLn $ ev (pp "not false")
+            putStrLn $ ev (pp "existsNatGtZ")
+            putStrLn $ ev (pp "tuple")
             -- putStrLn $ ev (pp [s|
                 -- map Nat Nat (λ n -> S n) (reverse Nat (append Nat (Cons one Nil) (Cons two Nil)))
                 -- |])
