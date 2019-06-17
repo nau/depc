@@ -357,6 +357,10 @@ lamForPi :: Expr -> Expr -> Expr
 lamForPi (Pi x xType body) a = Lam x (lamForPi body a)
 lamForPi Type a = a
 
+teleToExpr :: Tele -> Expr -> Expr -> (Expr, Expr)
+teleToExpr tele tbody body =
+    foldr (\(id, t) (tp, bd) -> (Pi id t tp, Lam id bd)) (tbody, body) tele
+
 checks :: Tele -> Rho -> [Expr] -> Typing ()
 checks [] _ []     = return ()
 checks ((x, tpe) : xas) rho (expr : exprs) = do

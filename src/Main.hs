@@ -61,26 +61,25 @@ main = do
             data Bool = true | false;
             data Nat = Z | S (n : Nat);
             data List (A : U) = Nil | Cons (e : A) (t : List A);
-            id : U -> U = λ a -> a;
-            neg : (A : U) -> U = \A -> A -> Void;
-            efq : (C : U) -> Void -> C = \CC -> split (Void -> CC) {};
+            id (A : U) (a : A) : A = a;
+            neg (A : U) : U = A -> Void;
+            efq (C : U) : Void -> C = split (Void -> C) {};
             natOrListBool : Nat -> U = split (Nat -> U) { Z -> Unit; S n -> List Bool; };
             u : natOrListBool Z = unit;
             lb : natOrListBool (S Z) = Cons true Nil;
-            explosion : (A : U) -> A -> neg A -> (B : U) -> B =
-                \AA a na B -> efq B (na a);
+            explosion (A : U) (a : A) (na : neg A) (B : U) : B = efq B (na a);
 
-            append : (A : U) -> List A -> List A -> List A = \ A -> split (List A -> List A -> List A) {
+            append (A : U) : List A -> List A -> List A = split (List A -> List A -> List A) {
                 Nil -> id (List A);
                 Cons x xs -> \ ys -> Cons x (append A xs ys);
             };
 
-            reverse : (A : U) -> List A -> List A = \A -> split (List A -> List A) {
+            reverse (A : U) : List A -> List A = split (List A -> List A) {
                 Nil -> Nil;
                 Cons x xs -> append A (reverse A xs) (Cons x Nil);
             };
 
-            map : (A:U)->(B:U)->(f:A->B)->List A->List B = \A B f -> split (List A->List B ) {
+            map (A : U) (B : U) (f : A -> B) : List A -> List B = split (List A -> List B) {
                 Nil -> Nil;
                 Cons x xs -> Cons (f x) (map A B f xs);
             };
@@ -94,7 +93,7 @@ main = do
             };
             three : Nat = plus two one;
             four : Nat = plus three one;
-            modusPonens : (A : U) -> (B : U) -> (A -> B) -> A -> B = λ A B f a -> f a;
+            modusPonens (A : U) (B : U) (f : A -> B) (a : A) : B = f a;
 
                     |]
             (ds, cons) <- runResolveDecls decls

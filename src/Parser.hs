@@ -133,12 +133,14 @@ constructor = do
 
 def = do
     name <- identifier
+    tele <- telescope
     symbol ":"
     tpe <- expr
     symbol "="
     e <- expr
     symbol ";"
-    return $ Def name tpe e
+    let (t, b) = teleToExpr tele tpe e
+    return $ Def name t b
     <?> "declaration"
 
 decl = try datadecl <|> def
