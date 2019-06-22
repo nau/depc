@@ -36,7 +36,7 @@ trailCommaSep p  = p `sepEndBy` comma
 semiSep  p  = p `sepBy` semi
 
 keywords = ["let", "in", "data", "split", "λ"]
-reservedSymbols = ['=', '\\', '-', ':', ';', '(', ')', '{', '}']
+reservedSymbols = ['|', '=', '\\', '-', ':', ';', '(', ')', '{', '}']
 
 identifier = lexeme $ do
     first <- satisfy (\s -> (isLetter s || isSymbol s) && notElem s reservedSymbols)
@@ -131,7 +131,10 @@ datadecl = do
 constructor = do
     name <- identifier
     tele <- telescope
-    return $ Constructor name tele
+    symbol ":"
+    tpe <- expr
+    let conType = foldr (\(id, t) acc -> Pi id t acc) tpe tele
+    return $ Constructor name conType
 
 def = do
     name <- identifier

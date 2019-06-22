@@ -57,11 +57,15 @@ main = do
     let defaultTEnv = do
             let decls = pd [s|
             data Void = ;
-            data Unit = unit;
-            data Bool = true | false;
-            data Nat = Z | S (n : Nat);
-            data List (A : U) = Nil | Cons (e : A) (t : List A);
-            data Sum (A : U) (B : A -> U) = Pair (x : A) (y : B x);
+            data Unit = unit : Unit;
+            data Bool = true : Bool | false : Bool;
+            data Nat = Z : Nat | S (n : Nat) : Nat;
+            data List (A : U) = Nil : List A | Cons (e : A) (t : List A) : List A;
+            data Sum (A : U) (B : A -> U) = Pair (x : A) (y : B x) : Sum A B;
+            data Vec (n : Nat) (A : U) = VNil : Vec Z A | VCons (elem : A) (k : Nat) (tail : Vec k A) : Vec (S k) A;
+            empty : Vec Z Bool = VNil;
+            -- single : Vec (Z) Bool = empty;
+            -- single : Vec (S Z) Bool = VCons true (Z) empty; -- todo fixme
             exists (A : U) (B : A -> U) : U = Sum A B;
             ∃ : (A : U) -> (B : A -> U) -> U = exists;
             Tuple (A : U) (B : U) : U = Sum A (\x -> B);
@@ -101,23 +105,34 @@ main = do
             three : Nat = plus two one;
             four : Nat = plus three one;
             modusPonens (A : U) (B : U) (f : A -> B) (a : A) : B = f a;
+            vfill (A : U) (a : A) : (m : Nat) -> Vec m A = split ((m : Nat) -> Vec m A) {
+                Z -> VNil;
+                S k -> VCons a k (vfill A a k);
+            };
+            vadd (A : U) : (m : Nat) -> (lhs : Vec m A) -> (n : Nat) -> (rhs: Vec n A) -> Vec (plus m n) A =
+                split ((m : Nat) -> (lhs : Vec m A) -> (n : Nat) -> (rhs: Vec n A) -> Vec (plus m n) A) {
+                    Z -> rhs;
+                    S a -> split (Vec m A -> (n : Nat) -> Vec n A -> Vec (plus m n) A) {
+                        VCons el k tl -> VCons el k (vadd A a tl n rhs)
+                    };
+                };
 
                     |]
             (ds, cons) <- runResolveDecls decls
             let tenv = initTEnv
             runTyping tenv $ checkDecls ds
+            traceShowM "TYPING COMPLETE!"
             let env = addDecls ds tenv
             return (env, cons)
     case defaultTEnv of
         Right r@((_, rho, _), cons) -> do
             let ev = showEval cons rho
-            putStrLn $ pprint rho
-            putStrLn $ "RESULT = " ++ ev (pp "lb")
-            putStrLn $ ev (pp "plus two one")
+            -- putStrLn $ pprint rho
+            putStrLn $ ev (pp "vfill Bool true two")
             putStrLn $ ev (pp "not false")
             putStrLn $ ev (pp "existsNatGtZ")
             putStrLn $ ev (pp "tuple")
-            -- putStrLn $ ev (pp [s|
-                -- map Nat Nat (λ n -> S n) (reverse Nat (append Nat (Cons one Nil) (Cons two Nil)))
-                -- |])
+            putStrLn $ ev (pp [s|
+                map Nat Nat (λ n -> S n) (reverse Nat (append Nat (Cons one Nil) (Cons two Nil)))
+                |])
         Left e -> putStrLn e

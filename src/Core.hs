@@ -38,7 +38,7 @@ data Expr
   | Lam Id Expr
   | Let Id Expr Expr Expr
   | Pi Id Expr Expr
-  | Sum Id [Constructor]
+  | Sum Id Expr [Constructor]
   | Split Expr [Case]
   | Type
   deriving (Show, Eq)
@@ -57,7 +57,7 @@ data Decl = Def Id Expr Expr
           | Data Id Expr [Constructor]
           deriving (Show, Eq)
 
-data Constructor = Constructor Id Tele deriving (Show, Eq)
+data Constructor = Constructor Id Expr deriving (Show, Eq)
 
 -- Type checking monad
 type Constructors = Map Id Expr
@@ -90,7 +90,7 @@ lookupRho id ρ = {- trace ("lookupRho " ++ id) $ -}
         else lookupRho id r
     D (Data name dataType cons) r -> if name == id
         then let
-            body = Sum name cons
+            body = Sum name dataType cons
             lam = lamForPi dataType body
             in eval ρ lam
         else lookupRho id r
@@ -135,8 +135,8 @@ resolveDecl decl = case decl of
         return (Def id t b, Map.empty)
     Data id tpe cons -> do
         t <- resolve tpe
-        cs <- mapM (\(Constructor nm tele) -> Constructor nm <$> resolveTele tele) cons
-        return (decl, foldl (\acc (Constructor nm _) -> Map.insert nm (Var id) acc) Map.empty cs)
+        cs <- mapM (\(Constructor nm tpe) -> Constructor nm <$> resolve tpe) cons
+        return (Data id t cs, foldl (\acc (Constructor nm _) -> Map.insert nm (Var id) acc) Map.empty cs)
 
 resolveTele tele = forM tele $ \(id, expr) -> do
     e <- resolve expr
@@ -229,12 +229,24 @@ checkExprHasType expr typeVal = do
             local (const (k + 1, ρ', γ')) $
                 checkExprHasType body (VClosure (updateRho env y vgen) piBody)
         (Lam{}, wrong) -> throwError $ "Expected Pi but got " ++ pprint wrong
-        (Sum _ bs, VType) -> forM_ bs $ \(Constructor id tele) ->
+        (Sum _ _ bs, VType) -> forM_ bs $ \(Constructor id tpe) -> do
+            let (tele, t) = unTele tpe
             checkTele tele
-        (Con id args, VClosure rho s@(Sum name params)) -> let
-            cons = map (\(Constructor id tele) -> (id, tele)) params
+        (Con id args, VClosure rho s@(Sum name dataType constructors)) -> let
+            cons = map (\(Constructor id tpe) -> (id, tpe)) constructors
             in case lookup id cons of
-                Just tele -> checks tele rho args
+                Just tpe -> do
+                    let (tele, t) = unTele tpe
+                    -- traceM $ "asdf " ++ id ++ show (tele) ++ show t
+                    rho' <- checks tele rho args
+                    let tt@(VClosure venv _) = eval rho' t
+                    -- traceM $ "vv = " ++ show (pretty venv)
+                    if eqVal k tt whTypeVal
+                    then return ()
+                    else throwError $ show $ "Expected" <+> line <+>
+                        pretty whTypeVal <+> line <+>
+                        "but got:" <+> line <+>
+                        pretty tt
                 Nothing -> throwError $ show $ "Unknown constructor" <+> pretty id <+> pretty s
 
         (Split tpe cases, VClosure env (Pi y yType piBody)) -> do
@@ -297,6 +309,8 @@ eqVal k u1 u2 = do
         (VType     , VType     ) -> True
         (VApp f1 a1, VApp f2 a2) -> eqVal k f1 f2 && eqVal k a1 a2
         (VGen k1   , VGen k2   ) -> k1 == k2
+        (VCon id1 args1, VCon id2 args2) -> id1 == id2 && all (\(a, b) -> eqVal k a b) (zip args1 args2)
+        (VClosure env1 (Split t1 bs1), VClosure env2 (Split t2 bs2)) -> True -- todo FIXME
         (VClosure env1 (Lam x1 e1), VClosure env2 (Lam x2 e2)) ->
             let v = VGen k
             in  eqVal (k + 1)
@@ -304,7 +318,20 @@ eqVal k u1 u2 = do
                         (VClosure (updateRho env2 x2 v) e2)
         -- It's a modification of original algorithm. I guess Type is Type in any context.
         (VClosure env1 Type, VType) -> True
-        (VClosure env1 (Sum id1 cons1), VClosure env2 (Sum id2 cons2)) -> id1 == id2 && cons1 == cons2
+        (VClosure env1 (Sum id1 dataType cons1), VClosure env2 (Sum id2 _ cons2)) -> let
+            tele = fst $ unTele dataType
+            asdf ((x, _) : xs) (V n1 v1 rest1) (V n2 v2 rest2) = let
+                r1 = x == n1
+                r2 = n1 == n2
+                r3 = eqVal k v1 v2
+                in {- trace ("eq " ++ x ++ show r1 ++ show r2 ++ show r3 ++ show v1 ++ "\n" ++ show v2) $ -}
+                    r1 && r2 && r3 && asdf xs rest1 rest2
+            asdf _ _ _ = True
+            r1 = id1 == id2
+            r2 = asdf (reverse tele) env1 env2
+            in -- traceShow ("eqVal = " <+> pretty dataType <+> pretty r2 <+> pretty id1 <+> pretty env1 <+> line <+> pretty env2 )
+                (r1 && r2)
+
         (VClosure env1 Type, VClosure env2 Type) -> True
         (VClosure env1 (Pi x1 xType1 b1), VClosure env2 (Pi x2 xType2 b2)) ->
             let v = {- trace "HEre" $ -} VGen k
@@ -349,7 +376,7 @@ checkMutualDecls decls = do
 extractTeleBodies :: Decl -> (Tele, [Expr]) -> (Tele, [Expr])
 extractTeleBodies (Def name tpe body) (teles, bodies) = ((name, tpe) : teles, body : bodies)
 extractTeleBodies (Data name dataType cons) (teles, bodies) = let
-    body = Sum name cons
+    body = Sum name dataType cons
     lam = lamForPi dataType body
     in ((name, dataType) : teles, lam : bodies)
 
@@ -361,8 +388,12 @@ teleToExpr :: Tele -> Expr -> Expr -> (Expr, Expr)
 teleToExpr tele tbody body =
     foldr (\(id, t) (tp, bd) -> (Pi id t tp, Lam id bd)) (tbody, body) tele
 
-checks :: Tele -> Rho -> [Expr] -> Typing ()
-checks [] _ []     = return ()
+unTele :: Expr -> (Tele, Expr)
+unTele (Pi x t b) = let (restT, res) = unTele b in ((x, t) : restT, res)
+unTele r = ([], r)
+
+checks :: Tele -> Rho -> [Expr] -> Typing Rho
+checks [] rho []     = return rho
 checks ((x, tpe) : xas) rho (expr : exprs) = do
     let vType = eval rho tpe
     -- traceShowM $ "Checking" <+> pretty x <+> "=" <+> pretty expr <+> colon <+> pretty vType
@@ -405,7 +436,7 @@ addDecls decls tenv = do
 
 instance Pretty Decl where
     pretty (Def id tpe body) = pretty id <+> ":" <+> pretty (PEnv 0 tpe) <+> "=" <+> pretty (PEnv 0 body)
-    pretty (Data name tpe cons) = "data" <+> pretty name <+> colon <+> pretty tpe <+> "=" <+> pretty cons
+    pretty (Data name tpe cons) = "data" <+> pretty name -- <+> colon <+> pretty tpe <+> "=" <+> pretty cons
 
 instance Pretty Constructor where
     pretty (Constructor name params) = pretty name <+> pretty params
@@ -421,7 +452,7 @@ instance Pretty (PEnv Expr) where
     pretty (PEnv prec e) = case e of
         Var id -> pretty id
         Con id args -> wrap 10 prec $ pretty id <+> foldl (\a b -> a <+> pretty b) "" args
-        Sum id cons -> "∑" <+> pretty id <+> list (map pretty cons)
+        Sum id _ cons -> "∑" <+> pretty id{- <+> list (map pretty cons) -}
         App e1 e2 -> wrap 10 prec $ pretty (PEnv 10 e1) <+> pretty (PEnv 11 e2)
         Lam id expr -> let
             (ids, expr) = foldLam e
@@ -447,7 +478,7 @@ instance Pretty (PEnv Val) where
 instance Pretty Rho where
     pretty ρ = list $ prettyRho ρ
 
-prettyRho ρ = take 1 $ pr ρ
+prettyRho ρ = take 2 $ pr ρ
   where
     pr Empty = []
     pr (V id v r) = pretty id <> "=" <> pretty v : pr r
