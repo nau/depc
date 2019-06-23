@@ -109,11 +109,12 @@ main = do
                 Z -> VNil;
                 S k -> VCons a k (vfill A a k);
             };
-            vadd (A : U) : (m : Nat) -> (lhs : Vec m A) -> (n : Nat) -> (rhs: Vec n A) -> Vec (plus m n) A =
-                split ((m : Nat) -> (lhs : Vec m A) -> (n : Nat) -> (rhs: Vec n A) -> Vec (plus m n) A) {
-                    Z -> rhs;
+            vadd (A : U) : (m : Nat) -> Vec m A -> (n : Nat) -> (rhs : Vec n A) -> Vec (plus m n) A =
+                split ((m : Nat) -> Vec m A -> (n : Nat) -> Vec n A -> Vec (plus m n) A) {
+                    Z -> \ lhs n rhs -> rhs;
                     S a -> split (Vec m A -> (n : Nat) -> Vec n A -> Vec (plus m n) A) {
-                        VCons el k tl -> VCons el k (vadd A a tl n rhs)
+                        VCons el k tl -> \n rhs -> VCons el (plus k n) (vadd A a tl n rhs);
+                        VNil -> \n rhs -> VNil; -- impossible
                     };
                 };
 
@@ -129,6 +130,7 @@ main = do
             let ev = showEval cons rho
             -- putStrLn $ pprint rho
             putStrLn $ ev (pp "vfill Bool true two")
+            putStrLn $ ev (pp "vadd Bool one (VCons true Z VNil) one (VCons false Z VNil)")
             putStrLn $ ev (pp "not false")
             putStrLn $ ev (pp "existsNatGtZ")
             putStrLn $ ev (pp "tuple")
