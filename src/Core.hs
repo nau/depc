@@ -399,7 +399,8 @@ checks ((x, tpe) : xas) rho (expr : exprs) = do
     -- traceShowM $ "Checking" <+> pretty x <+> "=" <+> pretty expr <+> colon <+> pretty vType
     -- traceShowM $ "Context" <+> pretty rho
     checkExprHasType expr vType
-    let v = eval rho expr
+    (_, ρ, _) <- ask
+    let v = eval ρ expr
     checks xas (V x v rho) exprs
 checks tele rho exprs =
   throwError $ show $ "checks: incorrect number of arguments" <+> pretty tele <+> pretty exprs
