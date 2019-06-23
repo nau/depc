@@ -62,7 +62,10 @@ main = do
             data Nat = Z : Nat | S (n : Nat) : Nat;
             data List (A : U) = Nil : List A | Cons (e : A) (t : List A) : List A;
             data Sum (A : U) (B : A -> U) = Pair (x : A) (y : B x) : Sum A B;
-            data Vec (n : Nat) (A : U) = VNil : Vec Z A | VCons (elem : A) (k : Nat) (tail : Vec k A) : Vec (S k) A;
+            data Vec (n : Nat) (A : U) =
+                VNil : Vec Z A |
+                VCons (elem : A) (k : Nat) (tail : Vec k A) : Vec (S k) A;
+            data Id (A : U) (a : A) (b : A) = refl : Id A a a;
             empty : Vec Z Bool = VNil;
             -- single : Vec (Z) Bool = empty;
             -- single : Vec (S Z) Bool = VCons true (Z) empty; -- todo fixme
@@ -104,6 +107,7 @@ main = do
             };
             three : Nat = plus two one;
             four : Nat = plus three one;
+            twoPlusTwoEqFour : Id Nat (plus two two) four = refl;
             modusPonens (A : U) (B : U) (f : A -> B) (a : A) : B = f a;
             vfill (A : U) (a : A) : (m : Nat) -> Vec m A = split ((m : Nat) -> Vec m A) {
                 Z -> VNil;
