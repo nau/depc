@@ -39,7 +39,7 @@ data Expr
   | Let Id Expr Expr Expr
   | Pi Id Expr Expr
   | Sum Id Expr [Constructor]
-  | Split Expr [Case]
+  | Split (Maybe Expr) [Case]
   | Type
   deriving (Show, Eq)
 
@@ -156,7 +156,7 @@ resolve e = case e of
     Type          -> return Type
     Pi id tpe body -> Pi id <$> resolve tpe <*> resolve body
     Lam x body         -> Lam x <$> resolve body
-    Split tpe cases -> Split <$> resolve tpe <*> mapM (\(Case con args expr) -> Case con args <$> resolve expr) cases
+    Split tpe cases -> Split <$> mapM resolve tpe <*> mapM (\(Case con args expr) -> Case con args <$> resolve expr) cases
 
 mkApps (Con l us) vs = Con l (us ++ vs)
 mkApps t ts          = foldl App t ts
@@ -250,8 +250,10 @@ checkExprHasType expr typeVal = do
                 Nothing -> throwError $ show $ "Unknown constructor" <+> pretty id <+> pretty s
 
         (Split tpe cases, VClosure env (Pi y yType piBody)) -> do
-            checkType tpe
-            let splitTypeVal = eval ρ tpe
+            splitTypeVal <- case tpe of
+                    Just tpe -> do  checkType tpe
+                                    return $ eval ρ tpe
+                    Nothing -> return whTypeVal
             if eqVal k splitTypeVal whTypeVal
             then case eval env yType of
                     VClosure env2 (Sum _ _ constrs) ->
@@ -323,6 +325,10 @@ inferExprType e = do
                     return res
                 _ -> throwError $ "Can't infer type for App, expected Pi: " ++ pprint e ++ " inferred " ++ pprint inferred
         Type -> return VType
+        Split (Just tpe) cases -> do
+            let vtpe = eval ρ tpe
+            checkExprHasType e vtpe
+            return vtpe
         _ -> throwError $ show $ "Couldn't infer type for" <+> pretty (show e)
 
 eqVal :: Int -> Val -> Val -> Bool

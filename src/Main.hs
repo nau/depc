@@ -63,7 +63,7 @@ main = do
             zero : Nat = Z;
             one : Nat = S zero;
             data List (A : U) = Nil : List A | Cons (e : A) (t : List A) : List A;
-            length (A : U) : List A -> Nat = split (List A -> Nat) {
+            length (A : U) : List A -> Nat = split {
                 Nil -> Z;
                 Cons e t -> S (length A t)
             };
@@ -77,36 +77,36 @@ main = do
             exists (A : U) (B : A -> U) : U = Sigma A B;
             ∃ : (A : U) -> (B : A -> U) -> U = exists;
             Tuple (A : U) (B : U) : U = Sigma A (\x -> B);
-            gtZ : Nat -> U = split (Nat -> U) { Z -> Void ; S x -> Unit };
+            gtZ : Nat -> U = split { Z -> Void ; S x -> Unit };
             existsNatGtZ : ∃ Nat gtZ = Pair (S Z) (unit);
             tuple : Tuple Bool Nat = Pair false (S Z);
             id (A : U) (a : A) : A = a;
             neg (A : U) : U = A -> Void;
             ¬ : (A : U) -> U = neg;
-            efq (C : U) : Void -> C = split (Void -> C) {};
-            natOrListBool : Nat -> U = split (Nat -> U) { Z -> Unit; S n -> List Bool };
+            efq (C : U) : Void -> C = split {};
+            natOrListBool : Nat -> U = split { Z -> Unit; S n -> List Bool };
             u : natOrListBool Z = unit;
             lb : natOrListBool (S Z) = Cons true Nil;
             explosion (A : U) (a : A) (na : ¬ A) (B : U) : B = efq B (na a);
-            append (A : U) : List A -> List A -> List A = split (List A -> List A -> List A) {
+            append (A : U) : List A -> List A -> List A = split {
                 Nil -> id (List A);
                 Cons x xs -> λ ys -> Cons x (append A xs ys);
             };
 
-            reverse (A : U) : List A -> List A = split (List A -> List A) {
+            reverse (A : U) : List A -> List A = split {
                 Nil -> Nil;
                 Cons x xs -> append A (reverse A xs) (Cons x Nil);
             };
 
-            map (A : U) (B : U) (f : A -> B) : List A -> List B = split (List A -> List B) {
+            map (A : U) (B : U) (f : A -> B) : List A -> List B = split {
                 Nil -> Nil;
                 Cons x xs -> Cons (f x) (map A B f xs);
             };
 
-            not : Bool -> Bool = split (Bool -> Bool) { true -> false; false -> true };
+            not : Bool -> Bool = split { true -> false; false -> true };
             one : Nat = S Z;
             two : Nat = S (S Z);
-            plus : Nat -> Nat -> Nat = split (Nat -> Nat -> Nat) {
+            plus : Nat -> Nat -> Nat = split {
                 Z -> λ n -> n ;
                 S m -> λ n -> S (plus m n);
             };
@@ -114,7 +114,7 @@ main = do
             four : Nat = plus three one;
             twoPlusTwoEqFour : Id Nat (plus two two) four = refl;
             modusPonens (A : U) (B : U) (f : A -> B) (a : A) : B = f a;
-            vfill (A : U) (a : A) : (m : Nat) -> Vec m A = split ((m : Nat) -> Vec m A) {
+            vfill (A : U) (a : A) : (m : Nat) -> Vec m A = split {
                 Z -> VNil;
                 S k -> VCons a k (vfill A a k);
             };

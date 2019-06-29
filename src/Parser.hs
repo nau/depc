@@ -92,7 +92,7 @@ caseClause = do
 
 split = do
     symbol "split"
-    tpe <- parens expr
+    tpe <- optional $ parens expr
     cases <- braces $ caseClause `sepEndBy` semi
     return $ Split tpe cases
 
