@@ -67,7 +67,24 @@ main = do
                 Nil -> Z;
                 Cons e t -> S (length A t)
             };
+            lt : Nat -> Nat -> Bool = split {
+                Z -> split (Nat -> Bool) {
+                    Z -> false;
+                    S n -> true;
+                };
+                S n -> split (Nat -> Bool) {
+                    Z -> false;
+                    S m -> lt n m;
+                }
+            };
+            boolToType (A : U) : Bool -> U = split {
+                true -> A;
+                false -> Void;
+            };
             data Sigma (A : U) (B : A -> U) = Pair (x : A) (y : B x) : Sigma A B;
+            data Liquid = Liq (A : U) (P : A -> Bool) : Liquid;
+            -- NonEmpty (A : U) : Liquid = Liq (List A) (\xs -> lt Z (length xs));
+            -- NonEmpty2 (A : U) : U = Sigma (List A) (\xs -> boolToType (lt Z (length xs)));
             data Vec (n : Nat) (A : U) =
                 VNil : Vec Z A |
                 VCons (elem : A) (k : Nat) (tail : Vec k A) : Vec (S k) A;
