@@ -253,7 +253,13 @@ checkExprHasType expr typeVal = do
             checkType tpe
             let splitTypeVal = eval ρ tpe
             if eqVal k splitTypeVal whTypeVal
-            then return ()
+            then case eval env yType of
+                    VClosure env2 (Sum _ _ constrs) ->
+                        if map (\(Constructor id _) -> id) constrs == map (\(Case id _ _) -> id) cases
+                            then sequence_ [ checkCase lbl env2 whTypeVal brc
+                                           | (brc, lbl) <- zip cases constrs ]
+                            else throwError "case branches does not match the data type"
+                    _ -> throwError "AAAAAA"
             else throwError $ show $ "AAA:" <+> pretty splitTypeVal <+> "!=" <+> pretty whTypeVal
         (Pi x xType body, VType) -> do
             checkType xType
@@ -274,6 +280,25 @@ checkExprHasType expr typeVal = do
             then return ()
             else throwError $ show $ "Types aren't equal with k=" <> pretty k <+> colon <+> line <+>
                 pretty inferredTypeVal <+> line <+> line <+> pretty whTypeVal
+
+checkCase :: Constructor -> Rho -> Val -> Case -> Typing ()
+checkCase (Constructor con expr) nu (VClosure env (Pi x xType piBody)) (Case _ names e) = do
+    let addBranch names nu (k, rho, gamma) = let
+            k' = k + length names
+            rho' = foldl (\r (var, i) -> V var (VGen i) r) rho (zip names [k..])
+            (tele, _) = unTele expr
+            gamma' = foldl (\(Gamma g) ((_, tpe), var) -> Gamma $ (var, eval nu tpe) : g) gamma (zip tele names)
+            in {- traceShow ("names" <+> pretty names <+> pretty gamma') $ -} (k', rho', gamma')
+    (k, rho, gamma) <- ask
+    let
+        k' = k + length names
+        vars = map VGen [k+1..k']
+        rho' = foldl (\r (var, vgen) -> V var vgen r) rho (zip names vars)
+        (tele, _) = unTele expr
+        gamma' = foldl (\(Gamma g) ((_, tpe), var) -> Gamma $ (var, eval nu tpe) : g) gamma (zip tele names)
+        vcon = VCon con vars
+    local (const (k', rho', gamma')) $
+        checkExprHasType e (VClosure (updateRho env x vcon) piBody)
 
 
 inferExprType :: Expr -> Typing Val

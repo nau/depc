@@ -63,16 +63,20 @@ main = do
             zero : Nat = Z;
             one : Nat = S zero;
             data List (A : U) = Nil : List A | Cons (e : A) (t : List A) : List A;
-            data Sum (A : U) (B : A -> U) = Pair (x : A) (y : B x) : Sum A B;
+            length (A : U) : List A -> Nat = split (List A -> Nat) {
+                Nil -> Z;
+                Cons e t -> S (length A t)
+            };
+            data Sigma (A : U) (B : A -> U) = Pair (x : A) (y : B x) : Sigma A B;
             data Vec (n : Nat) (A : U) =
                 VNil : Vec Z A |
                 VCons (elem : A) (k : Nat) (tail : Vec k A) : Vec (S k) A;
             data Id (A : U) (a : A) (b : A) = refl : Id A a a;
             empty : Vec Z Bool = VNil;
             single : Vec (S Z) Bool = VCons true (Z) empty;
-            exists (A : U) (B : A -> U) : U = Sum A B;
+            exists (A : U) (B : A -> U) : U = Sigma A B;
             ∃ : (A : U) -> (B : A -> U) -> U = exists;
-            Tuple (A : U) (B : U) : U = Sum A (\x -> B);
+            Tuple (A : U) (B : U) : U = Sigma A (\x -> B);
             gtZ : Nat -> U = split (Nat -> U) { Z -> Void ; S x -> Unit };
             existsNatGtZ : ∃ Nat gtZ = Pair (S Z) (unit);
             tuple : Tuple Bool Nat = Pair false (S Z);
@@ -114,14 +118,6 @@ main = do
                 Z -> VNil;
                 S k -> VCons a k (vfill A a k);
             };
-            vadd (A : U) : (m : Nat) -> Vec m A -> (n : Nat) -> (rhs : Vec n A) -> Vec (plus m n) A =
-                split ((m : Nat) -> Vec m A -> (n : Nat) -> Vec n A -> Vec (plus m n) A) {
-                    Z -> \ lhs n rhs -> rhs;
-                    S a -> split (Vec m A -> (n : Nat) -> Vec n A -> Vec (plus m n) A) {
-                        VCons el k tl -> \n rhs -> VCons el (plus k n) (vadd A a tl n rhs);
-                        VNil -> \n rhs -> VNil; -- impossible
-                    };
-                };
 
                     |]
             (ds, cons) <- runResolveDecls decls
@@ -135,7 +131,6 @@ main = do
             let ev = showEval cons rho
             -- putStrLn $ pprint rho
             putStrLn $ ev (pp "vfill Bool true two")
-            putStrLn $ ev (pp "vadd Bool one (VCons true Z VNil) one (VCons false Z VNil)")
             putStrLn $ ev (pp "not false")
             putStrLn $ ev (pp "existsNatGtZ")
             putStrLn $ ev (pp "tuple")
