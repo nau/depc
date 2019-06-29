@@ -155,7 +155,15 @@ toplevel = Left <$> try decls <|> Right <$> expr
 
 contents p = between sc eof p
 
-parseWith parser s = parse (contents parser) "<stdin>" s
+parseFileNameWith filename parser s = parse (contents parser) filename s
+
+parseWith parser s = parseFileNameWith "<stdin>" parser s
+
+parseFileWith filename parser = do
+    contents <- readFile filename
+    return $ parseFileNameWith filename parser contents
+
+parseFile filename = parseFileWith filename toplevel
 
 pp :: String -> Expr
 pp s = case parseWith toplevel s of
