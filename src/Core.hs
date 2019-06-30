@@ -501,6 +501,14 @@ instance Pretty Case where
 instance Pretty (PEnv Val) where
     pretty (PEnv prec e) = case e of
         VGen i -> pretty i
+        VCon "Z" args -> "0"
+        VCon "S" args -> let
+            go :: Val -> Integer
+            go (VCon "S" [a]) = 1 + go a
+            go (VCon "Z" []) = 0
+            go e = error ("Impossible " ++ show e)
+            in pretty $ go e
+
         VCon id args -> parens $ pretty id <+> foldl (\a b -> a <+> pretty b) "" args
         VApp e1 e2 -> wrap 10 prec $ pretty (PEnv 10 e1) <> "·" <> pretty (PEnv 11 e2)
         -- VPi e1 e2 -> wrap 5 prec $ pretty e1 <+> "->>>" <+> pretty e2

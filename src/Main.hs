@@ -72,12 +72,12 @@ main = do
         Right r@((_, rho, _), cons) -> do
             let ev = showEval cons rho
             -- putStrLn $ pprint rho
-            putStrLn $ ev (pp "vfill Bool true two")
+            putStrLn $ ev (pp "vfill Bool true 2")
             putStrLn $ ev (pp "not false")
             putStrLn $ ev (pp "existsNatGtZ")
             putStrLn $ ev (pp "five")
             putStrLn $ ev (pp "List Bool")
             putStrLn $ ev (pp [s|
-                map Nat Nat (λ n -> S n) (reverse Nat (append Nat (Cons one Nil) (Cons two Nil)))
+                map Nat Nat (λ n -> S n) (reverse Nat (append Nat (Cons 1 Nil) (Cons 2 Nil)))
                 |])
         Left e -> putStrLn e

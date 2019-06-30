@@ -96,10 +96,17 @@ split = do
     cases <- braces $ caseClause `sepEndBy` semi
     return $ Split tpe cases
 
+integer = lexeme L.decimal
+
+nat = do
+    i <- integer
+    return $ foldr (\_ e -> Con "S" [e]) (Con "Z" []) [1..i]
+
+literal = nat
 
 expr = try split <|> try letins <|> lambda <|> try fun <|> try piType <|> exp1
 exp1 = apply <|> exp2
-exp2 = universe <|> var <|> parens expr
+exp2 = universe <|> var <|> literal <|> parens expr
 
 fun = do
     e1 <- exp1

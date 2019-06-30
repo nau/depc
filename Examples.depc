@@ -21,18 +21,13 @@ and : Bool -> Bool -> Bool = split { true -> id Bool; false -> \r -> false };
 
 -- Nat stuff
 data Nat = Z : Nat | S (n : Nat) : Nat;
-zero : Nat = Z;
-one : Nat = S Z;
-two : Nat = S (S Z);
 plus : Nat -> Nat -> Nat = split {
     Z -> λ n -> n ;
     S m -> λ n -> S (plus m n);
 };
-three : Nat = plus two one;
-four : Nat = plus three one;
-five : Nat = let tw : Nat = two in let thr : Nat = three in plus tw thr;
+five : Nat = let tw : Nat = 2 in let thr : Nat = 3 in plus tw thr;
 
-twoPlusTwoEqFour : Id Nat (plus two two) four = refl;
+twoPlusTwoEqFour : Id Nat (plus 2 2) 4 = refl;
 
 lt : Nat -> Nat -> Bool = split {
     Z -> split (Nat -> Bool) {
