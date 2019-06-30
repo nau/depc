@@ -1,3 +1,4 @@
+data String = ;
 data Void = ;
 efq (C : U) : Void -> C = split {};
 neg (A : U) : U = A -> Void;

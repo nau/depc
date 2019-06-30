@@ -33,6 +33,7 @@ type Tele   = [(Id, Expr)]
 
 data Expr
   = Var Id
+  | Lit Id
   | Con Id [Expr]
   | App Expr Expr
   | Lam Id Expr
@@ -47,6 +48,7 @@ data Case = Case Id [Id] Expr deriving (Show, Eq)
 
 data Val
   = VGen Int
+  | VLit Id
   | VCon Id [Val]
   | VApp Val Val
   | VType
@@ -149,6 +151,7 @@ resolve e = case e of
         case Map.lookup x cons of
             Just _ -> return $ Con x []
             Nothing -> return e
+    Lit _         -> return e
     Con name ts   -> return e
     App e1 e2     -> let (head, spine) = unApps e1 [e2]
                      in mkApps <$> resolve head <*> mapM resolve spine
@@ -189,6 +192,7 @@ eval rho e = let
     -- ee = traceShow ("eval" <+> pretty e <+> "in rho = " <+> pretty rho) e
     res = case e of
         Var x         -> lookupRho x rho
+        Lit s         -> VLit s
         Con name ts   -> VCon name (map (eval rho) ts)
         App e1 e2     -> app (eval rho e1) (eval rho e2)
         Let x e1 _ e3 -> eval (updateRho rho x (eval rho e1)) e3
@@ -220,6 +224,7 @@ checkExprHasType expr typeVal = do
     -- traceM $ "checkExprHasType " <> show expr
     -- traceM $ "  has type " <> show whTypeVal
     case (expr, whTypeVal) of
+        (Lit s, VClosure rho (Sum "String" _ _)) -> return ()
         (Lam x body, VClosure env (Pi y yType piBody)) -> do
             let vgen = VGen k
                 ρ' = updateRho ρ x vgen
@@ -483,6 +488,7 @@ foldLam expr = go expr ([], expr) where
 instance Pretty (PEnv Expr) where
     pretty (PEnv prec e) = case e of
         Var id -> pretty id
+        Lit s  -> dquotes $ pretty s
         Con id args -> wrap 10 prec $ pretty id <+> foldl (\a b -> a <+> pretty b) "" args
         Sum id _ cons -> "∑" <+> pretty id{- <+> list (map pretty cons) -}
         App e1 e2 -> wrap 10 prec $ pretty (PEnv 10 e1) <+> pretty (PEnv 11 e2)
@@ -501,6 +507,7 @@ instance Pretty Case where
 instance Pretty (PEnv Val) where
     pretty (PEnv prec e) = case e of
         VGen i -> pretty i
+        VLit s  -> dquotes $ pretty s
         VCon "Z" args -> "0"
         VCon "S" args -> let
             go :: Val -> Integer

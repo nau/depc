@@ -98,11 +98,18 @@ split = do
 
 integer = lexeme L.decimal
 
+stringLiteral = do
+    char '"'
+    l <- manyTill L.charLiteral (char '"')
+    return $ Lit l
+
+stringLit = lexeme stringLiteral
+
 nat = do
     i <- integer
     return $ foldr (\_ e -> Con "S" [e]) (Con "Z" []) [1..i]
 
-literal = nat
+literal = nat <|> stringLit
 
 expr = try split <|> try letins <|> lambda <|> try fun <|> try piType <|> exp1
 exp1 = apply <|> exp2
