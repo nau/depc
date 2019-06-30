@@ -160,6 +160,7 @@ resolve e = case e of
     Pi id tpe body -> Pi id <$> resolve tpe <*> resolve body
     Lam x body         -> Lam x <$> resolve body
     Split tpe cases -> Split <$> mapM resolve tpe <*> mapM (\(Case con args expr) -> Case con args <$> resolve expr) cases
+    Sum name tpe constrs -> Sum name <$> resolve tpe <*> mapM (\(Constructor con expr) -> Constructor con <$> resolve expr) constrs
 
 mkApps (Con l us) vs = Con l (us ++ vs)
 mkApps t ts          = foldl App t ts
@@ -173,6 +174,7 @@ lookupCase x cases = case cases of
 
 
 app :: Val -> Val -> Val
+app (VApp (VLit "error") _) (VLit s) = error $ "Error: " ++ s
 app (VClosure env (Lam x e)) arg = eval (updateRho env x arg) e
 app (VClosure env (Split tpe cases)) (VCon id args) =
     case lookupCase id cases of
@@ -191,6 +193,7 @@ eval :: Rho -> Expr -> Val
 eval rho e = let
     -- ee = traceShow ("eval" <+> pretty e <+> "in rho = " <+> pretty rho) e
     res = case e of
+        Var "error"   -> VLit "error"
         Var x         -> lookupRho x rho
         Lit s         -> VLit s
         Con name ts   -> VCon name (map (eval rho) ts)
@@ -290,12 +293,6 @@ checkExprHasType expr typeVal = do
 
 checkCase :: Constructor -> Rho -> Val -> Case -> Typing ()
 checkCase (Constructor con expr) nu (VClosure env (Pi x xType piBody)) (Case _ names e) = do
-    let addBranch names nu (k, rho, gamma) = let
-            k' = k + length names
-            rho' = foldl (\r (var, i) -> V var (VGen i) r) rho (zip names [k..])
-            (tele, _) = unTele expr
-            gamma' = foldl (\(Gamma g) ((_, tpe), var) -> Gamma $ (var, eval nu tpe) : g) gamma (zip tele names)
-            in {- traceShow ("names" <+> pretty names <+> pretty gamma') $ -} (k', rho', gamma')
     (k, rho, gamma) <- ask
     let
         k' = k + length names
@@ -306,17 +303,19 @@ checkCase (Constructor con expr) nu (VClosure env (Pi x xType piBody)) (Case _ n
         vcon = VCon con vars
     local (const (k', rho', gamma')) $
         checkExprHasType e (VClosure (updateRho env x vcon) piBody)
-
+checkCase c r v cs = error "checkCase"
 
 inferExprType :: Expr -> Typing Val
 inferExprType e = do
     (k, ρ, γ) <- ask
     case e of
+        Var "error" -> return $ VClosure Empty (Pi "A" Type (Pi "_" (Sum "String" Type []) (Var "A")))
         Var id -> do
             typeVal <- lookupGamma id γ
             let evaled = whnf typeVal
             -- traceM $ show ("Infer" <+> pretty e <+> ":" <+> pretty evaled)
             return evaled
+        Lit{} -> return $ VClosure Empty (Sum "String" Type [])
         App e1 e2 -> do
             inferred <- inferExprType e1
             let wh = whnf inferred
@@ -419,6 +418,7 @@ extractTeleBodies (Data name dataType cons) (teles, bodies) = let
 lamForPi :: Expr -> Expr -> Expr
 lamForPi (Pi x xType body) a = Lam x (lamForPi body a)
 lamForPi Type a = a
+lamForPi e a = error $ show $ "Unexpected" <+> pretty e <+> "in lamForPi"
 
 teleToExpr :: Tele -> Expr -> Expr -> (Expr, Expr)
 teleToExpr tele tbody body =

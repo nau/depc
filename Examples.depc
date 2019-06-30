@@ -1,5 +1,6 @@
 data String = ;
 data Void = ;
+undefined (A: U): A = error A "undefined";
 efq (C : U) : Void -> C = split {};
 neg (A : U) : U = A -> Void;
 ¬ : (A : U) -> U = neg;
@@ -95,3 +96,11 @@ vfill (A : U) (a : A) : (m : Nat) -> Vec m A = split {
     Z -> VNil;
     S k -> VCons a k (vfill A a k);
 };
+
+data Expr = Var : String -> Expr
+  | Lit : String -> Expr
+  | Con : String -> List Expr -> Expr
+  | App : Expr -> Expr -> Expr
+  | Lam : String -> Expr -> Expr;
+
+-- quote (A : U) : A -> Expr =
