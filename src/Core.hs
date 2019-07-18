@@ -5,7 +5,6 @@
 {-# LANGUAGE UnicodeSyntax  #-}
 module Core where
 
-import Control.Monad
 import Control.Monad.Identity
 import Control.Monad.Except
 import Control.Monad.Reader
@@ -42,6 +41,8 @@ data Expr
   | Sum Id Expr [Constructor]
   | Split (Maybe Expr) [Case]
   | Type
+  | Quote Expr
+  | Splice Expr
   deriving (Show, Eq)
 
 data Case = Case Id [Id] Expr deriving (Show, Eq)
@@ -161,6 +162,8 @@ resolve e = case e of
     Lam x body         -> Lam x <$> resolve body
     Split tpe cases -> Split <$> mapM resolve tpe <*> mapM (\(Case con args expr) -> Case con args <$> resolve expr) cases
     Sum name tpe constrs -> Sum name <$> resolve tpe <*> mapM (\(Constructor con expr) -> Constructor con <$> resolve expr) constrs
+    Quote e -> Quote <$> resolve e
+    Splice e -> Splice <$> resolve e
 
 mkApps (Con l us) vs = Con l (us ++ vs)
 mkApps t ts          = foldl App t ts
@@ -205,6 +208,8 @@ eval rho e = let
         Pi{}          -> VClosure rho e
         Lam{}         -> VClosure rho e
         Split{}       -> VClosure rho e
+        Quote e       -> quote rho e
+        Splice e      -> eval rho (unquote $ eval rho e)
     in {- traceShow (pretty e <+> "↦" <+> pretty res) -} res
 
 
@@ -227,6 +232,8 @@ checkExprHasType expr typeVal = do
     -- traceM $ "checkExprHasType " <> show expr
     -- traceM $ "  has type " <> show whTypeVal
     case (expr, whTypeVal) of
+        (Splice e, vt) -> checkExprHasType (unquote (eval ρ e)) vt
+        (Quote e, VClosure rho (Sum "Expr" _ _)) -> return ()
         (Lit s, VClosure rho (Sum "String" _ _)) -> return ()
         (Lam x body, VClosure env (Pi y yType piBody)) -> do
             let vgen = VGen k
@@ -288,7 +295,7 @@ checkExprHasType expr typeVal = do
             inferredTypeVal <- inferExprType expr
             if eqVal k inferredTypeVal whTypeVal
             then return ()
-            else throwError $ show $ "Types aren't equal with k=" <> pretty k <+> colon <+> line <+>
+            else throwError $ show $ "Types aren't equal for " <> pretty expr <+> colon <+> line <+>
                 pretty inferredTypeVal <+> line <+> line <+> pretty whTypeVal
 
 checkCase :: Constructor -> Rho -> Val -> Case -> Typing ()
@@ -471,6 +478,57 @@ addDecls decls tenv = do
     let env = List.foldl (flip addDecl) tenv decls
     env
 
+
+{- Macros -}
+
+vnil = (VCon "Nil" [])
+
+quote :: Rho -> Expr -> Val
+quote rho e = case e of
+    Var x         -> VCon "Var" [VLit x]
+    Lit s         -> VCon "Lit" [VLit s]
+    Con name ts   -> VCon "Con" [VLit name, foldr (\e a -> VCon "Cons" [quote rho e, a]) vnil ts ]
+    App e1 e2     -> VCon "App" [quote rho e1, quote rho e2]
+    Type          -> VCon "Type" []
+    Lam x body    -> VCon "Lam" [VLit x, quote rho body]
+    Let x expr tpe body -> VCon "Let" [VLit x, quote rho expr, quote rho tpe, quote rho body]
+    Pi x tpe body -> VCon "Pi" [VLit x, quote rho tpe, quote rho body]
+    Split (Just tpe) cases -> VCon "Split" [quote rho tpe, quoteCases cases]
+    Splice e      -> eval rho e
+    _ -> undefined
+  where quoteCases cases = foldr (\e a -> VCon "Cons" [quoteCase e, a]) vnil cases
+        quoteCase (Case con args body) = let
+            vcases = foldr (\e a -> VCon "Cons" [VLit e, a] ) vnil args
+            in VCon "Pair" [VLit con, VCon "Pair" [vcases, quote rho body]]
+
+unquote :: Val -> Expr
+unquote val = case val of
+    VCon "Var" [VLit x] -> Var x
+    VCon "Lit" [VLit s] -> Lit s
+    VCon "Con" [VLit s, vlist] -> Con s $ unquoteList vlist
+    VCon "App" [f, a] -> App (unquote f) (unquote a)
+    VCon "Type" [] -> Type
+    VCon "Lam" [VLit s, body] -> Lam s (unquote body)
+    VCon "Let" [VLit s, expr, tpe, body] -> Let s (unquote expr) (unquote tpe) (unquote body)
+    VCon "Pi"  [VLit s, tpe, body] -> Pi s (unquote tpe) (unquote body)
+    VCon "Split"  [tpe, cases] -> Split (Just $ unquote tpe) (unquoteCases cases)
+    _ -> error $ "Unsupported unquote: " ++ show val
+
+unquoteCases :: Val -> [Case]
+unquoteCases cases = case cases of
+    VCon "Cons" [el, tl] -> unquoteCase el : unquoteCases tl
+    VCon "Nil" [] -> []
+    _  -> error "unquoteCases"
+
+unquoteCase (VCon "Pair" [VLit con, VCon "Pair" [vcases, body]]) = Case con [] (unquote body)
+unquoteCase e = error $ "unquoteCase " ++ show e
+
+unquoteList ls = case ls of
+    VCon "Cons" [el, tl] -> unquote el : unquoteList tl
+    VCon "Nil" [] -> []
+    _ -> error $ "This is not a List! " ++ show ls
+
+
 instance Pretty Decl where
     pretty (Def id tpe body) = pretty id <+> ":" <+> pretty (PEnv 0 tpe) <+> "=" <+> pretty (PEnv 0 body)
     pretty (Data name tpe cons) = "data" <+> pretty name -- <+> colon <+> pretty tpe <+> "=" <+> pretty cons
@@ -501,6 +559,8 @@ instance Pretty (PEnv Expr) where
         Pi "_" tpe body -> wrap 5 prec $ pretty (PEnv 6 tpe) <+> "->" <+> pretty (PEnv 5 body)
         Pi id tpe body ->  wrap 5 prec $ parens (pretty id <+> ":" <+> pretty (PEnv 5 tpe)) <+> "->" <+> pretty (PEnv 5 body)
         Type -> "U"
+        Splice e -> "${" <+> pretty e <+> "}"
+        Quote e -> "[|" <+> pretty e <+> "|]"
 
 instance Pretty Case where
     pretty (Case con ids e) = pretty con <+> list (map pretty ids) <+> "->" <+> pretty e <+> semi

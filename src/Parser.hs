@@ -36,7 +36,7 @@ trailCommaSep p  = p `sepEndBy` comma
 semiSep  p  = p `sepBy` semi
 
 keywords = ["let", "in", "data", "split", "λ"]
-reservedSymbols = ['|', '=', '\\', '-', ':', ';', '(', ')', '{', '}']
+reservedSymbols = ['|', '=', '\\', '-', ':', ';', '(', ')', '{', '}', '[', ']', '$']
 
 identifier = lexeme $ do
     first <- satisfy (\s -> (isLetter s || isSymbol s) && notElem s reservedSymbols)
@@ -76,10 +76,8 @@ letins = do
     name <- identifier
     symbol ":"
     tpe <- expr
-    traceM $ "let tpe = " ++ show tpe
     symbol "="
     e1 <- expr
-    traceM $ "let e1 = " ++ show e1
     symbol "in"
     e2 <- expr
     return $ Let name e1 tpe e2
@@ -111,9 +109,17 @@ nat = do
 
 literal = nat <|> stringLit
 
+quoteExpr = do
+    e <- between (symbol "[|") (symbol "|]") expr
+    return $ Quote e
+
+spliceExpr = do
+    e <- between (symbol "${") (symbol "}") expr
+    return $ Splice e
+
 expr = try split <|> try letins <|> lambda <|> try fun <|> try piType <|> exp1
 exp1 = apply <|> exp2
-exp2 = universe <|> var <|> literal <|> parens expr
+exp2 = universe <|> var <|> literal <|> quoteExpr <|> spliceExpr <|> parens expr
 
 fun = do
     e1 <- exp1

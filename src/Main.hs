@@ -55,7 +55,7 @@ showEval cons rho expr = case runResolver (resolve expr) cons of
 
 main :: IO ()
 main = do
-    theorems
+    -- theorems
     r <- parseFile "Examples.depc"
     let defaultTEnv = do
             let decls = case r of
@@ -71,13 +71,5 @@ main = do
     case defaultTEnv of
         Right r@((_, rho, _), cons) -> do
             let ev = showEval cons rho
-            -- putStrLn $ pprint rho
-            putStrLn $ ev (pp "vfill Bool true 2")
-            putStrLn $ ev (pp "not false")
-            putStrLn $ ev (pp "existsNatGtZ")
-            putStrLn $ ev (pp "five")
-            putStrLn $ ev (pp "List Bool")
-            putStrLn $ ev (pp [s|
-                map Nat Nat (λ n -> S n) (reverse Nat (append Nat (Cons 1 Nil) (Cons 2 Nil)))
-                |])
+            putStrLn $ ev (pp "main")
         Left e -> putStrLn e

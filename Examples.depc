@@ -46,6 +46,11 @@ gtZ : Nat -> U = split { Z -> Void ; S x -> Unit };
 -- List stuff
 data List (A : U) = Nil : List A | Cons (e : A) (t : List A) : List A;
 
+head (A : U) : List A -> A = split {
+    Nil -> error A "head Nil";
+    Cons e tl -> e;
+};
+
 length (A : U) : List A -> Nat = split {
     Nil -> Z;
     Cons e t -> S (length A t)
@@ -101,6 +106,22 @@ data Expr = Var : String -> Expr
   | Lit : String -> Expr
   | Con : String -> List Expr -> Expr
   | App : Expr -> Expr -> Expr
-  | Lam : String -> Expr -> Expr;
+  | Lam : String -> Expr -> Expr
+  | Let : String -> Expr -> Expr -> Expr -> Expr
+  | Split : Expr -> List (Tuple (String) (Tuple (List String) Expr)) -> Expr
+  | Pi  : String -> Expr -> Expr -> Expr
+  | Type : Expr;
 
--- quote (A : U) : A -> Expr =
+splice : String = ${ Lit "test" }; -- "test"
+quoteType : Expr = [| \x -> Nat |];
+quotePi : Expr = [| (x : U -> U) -> (y : U) -> x y |];
+quoteLam : Expr = [| \x -> plus x 3 |];
+quoteLet : Expr = [| let z : Nat = ${quoteLam} five in z |];
+quoteSplit : Expr = [| split (Bool -> Bool) { true -> false; false -> true } |];
+quotesplice : Expr = [| plus ${quoteLet} 2 |];
+main : Expr = quoteLam;
+main : Expr = quoteType;
+main : Expr = quotePi;
+main : Expr = quoteSplit; -- 10
+main : Bool = let a : Bool -> Bool = ${quoteSplit} in a true; -- 10
+main : Nat = ${quotesplice}; -- 10
